@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diva AirSlick on Push 3</title>
+<meta name="description" content="Interactive map of the Push 3 banks in Diva AirSlick, a Max for Live device for u-he Diva.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap">
+<style>
+	/* Layout: Push 3 at the top, full width; below, the bank map. */
+	:root {
+		--bg: #111214;
+		--panel: #18191c;
+		--line: #2a2c31;
+		--fg: #e8e8ea;
+		--muted: #9a9ca3;
+		--faint: #6b6e76;
+		--track: #58c4f0;
+		--violet: #b36bff;
+		--display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+		--body: "IBM Plex Sans", system-ui, sans-serif;
+		--mono: "IBM Plex Mono", ui-monospace, monospace;
+		/* section colours from the device */
+		--h-perf: #e8e8ea; --h-osc: #4cc9e0; --h-hpf: #7fb2ff; --h-vcf: #f5a33b; --h-env: #f2727f;
+		--h-lfo: #a6dd5c; --h-fx: #5dd39e; --h-play: #e6d36a; --h-arp: #d8bf5a; --h-amp: #f0c35a;
+		--h-mods: #e07bd0; --h-trim: #c9a0e8;
+		color-scheme: dark;
+	}
+	* { box-sizing: border-box; }
+	body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); margin: 0; }
+	.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 22px; }
+	header { display: grid; gap: 6px; }
+	h1 { font: 600 26px/1.15 var(--display); letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+	h1 span { color: var(--muted); font-weight: 400; }
+	h2 { font: 600 13px/1.2 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+	p { margin: 0; max-width: 72ch; color: #c9cad0; }
+	a { color: var(--track); }
+	footer p { font-size: 12.5px; color: var(--faint); }
+	kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); }
+
+	.rig { background: #0b0b0c; border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+	#push { display: block; width: 100%; height: auto; aspect-ratio: 1000 / 336; touch-action: none; cursor: ns-resize; border-radius: 8px; }
+
+	.bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+	.btn { font: 500 13px var(--display); letter-spacing: 0.04em; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 7px 14px; cursor: pointer; user-select: none; }
+	.btn[aria-pressed="true"] { background: var(--fg); color: #111; border-color: var(--fg); }
+	.btn:focus-visible, tr[tabindex]:focus-visible { outline: 2px solid var(--track); outline-offset: 2px; }
+	.check { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+	.check input { accent-color: var(--track); }
+	.log { flex: 1 1 320px; min-width: 0; font-size: 13px; color: var(--muted); }
+	.log b { color: var(--fg); font-weight: 500; }
+
+	.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+	.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+	table { border-collapse: collapse; width: 100%; min-width: 900px; font: 12.5px/1.3 var(--display); font-variant-numeric: tabular-nums; }
+	th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+	thead th { color: var(--faint); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; background: var(--panel); position: sticky; top: 0; }
+	tbody tr { cursor: pointer; }
+	tbody tr:hover { background: #1b1c20; }
+	tbody tr.cur { background: #1f2a30; }
+	td.n { color: var(--faint); width: 26px; }
+	td.bank { font-weight: 600; }
+	td.bank .dot { margin-right: 7px; }
+	td.empty { color: #3d4046; }
+	td.btns { color: var(--muted); }
+	td.flash { animation: flash 1.6s ease-out; }
+	td.mod { color: #cfa6ff; }
+	@keyframes flash { from { background: color-mix(in srgb, var(--track) 55%, transparent); color: #fff; } to { background: transparent; } }
+
+	@media (prefers-reduced-motion: reduce) { td.flash { animation: none; background: color-mix(in srgb, var(--track) 30%, transparent); } }
+</style>
+
+<div class="wrap">
+	<header>
+		<h1>Diva AirSlick <span>on Push 3 · Device mode</span></h1>
+	</header>
+
+	<div class="rig"><canvas id="push" aria-label="Push 3 in Device mode: encoders, display buttons and display"></canvas></div>
+
+	<div class="bar">
+		<button class="btn" id="shift" aria-pressed="false">Shift</button>
+		<div class="log" id="log" aria-live="polite"></div>
+	</div>
+
+	<section style="display:grid;gap:10px">
+		<h2>All banks for the selected models</h2>
+		<div class="scroll"><table id="map"></table></div>
+	</section>
+
+	<footer>
+		<p>Diva is a trademark of u-he. Diva AirSlick is an independent product by PROB//ST, not developed or endorsed by u-he. Ableton, Live and Push are trademarks of Ableton AG.</p>
+	</footer>
+</div>
+
+<script>
+// Diva parameters (names, ranges, list texts) and the values of Diva's default patch.
+window.DIVA = {"params":{"main:CcOp":{"i":1,"kind":"continuous","name":"Output","min":0,"max":200,"dec":2},"main:#FX1":{"i":2,"kind":"enum","name":"Active #FX1","options":["Off","On"]},"main:#FX2":{"i":3,"kind":"enum","name":"Active #FX2","options":["Off","On"]},"VCC:Voices":{"i":5,"kind":"steps","name":"Voices","options":["2","3","4","5","6","8","12","16"]},"VCC:Voicing":{"i":6,"kind":"steps","name":"Voice Stack","options":["1","2","3","4","5","6"]},"VCC:Mode":{"i":7,"kind":"enum","name":"Mode","options":["poly","mono","legato","duo","poly2"]},"VCC:PortaM":{"i":8,"kind":"enum","name":"GlideMode","options":["time","rate"]},"VCC:Porta":{"i":9,"kind":"continuous","name":"Glide","min":0,"max":100,"dec":2},"VCC:Porta2":{"i":10,"kind":"continuous","name":"Glide2","min":-100,"max":100,"dec":2},"VCC:PRange":{"i":11,"kind":"continuous","name":"GlideRange","min":0,"max":100,"dec":2},"VCC:PB":{"i":12,"kind":"enum","name":"PitchBend Up","options":["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","36","48","MPE"]},"VCC:PBD":{"i":13,"kind":"enum","name":"PitchBend Down","options":["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","36","48","MPE"]},"VCC:MTunS":{"i":14,"kind":"steps","name":"TuningMode","options":["0","1"]},"VCC:Trsp":{"i":15,"kind":"steps","name":"Transpose","options":["-24","-23","-22","-21","-20","-19","-18","-17","-16","-15","-14","-13","-12","-11","-10","-9","-8","-7","-6","-5","-4","-3","-2","-1","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24"]},"VCC:FTun":{"i":16,"kind":"continuous","name":"FineTuneCents","min":-100,"max":100,"dec":2},"VCC:Prior":{"i":17,"kind":"enum","name":"Note Priority","options":["last","lowest","highest"]},"OPT:Acc":{"i":19,"kind":"enum","name":"Accuracy","options":["draft","fast","great","divine"]},"OPT:OffAcc":{"i":20,"kind":"enum","name":"OfflineAcc","options":["same","best"]},"OPT:TSlop":{"i":21,"kind":"continuous","name":"TuneSlop","min":0,"max":100,"dec":2},"OPT:CSlop":{"i":22,"kind":"continuous","name":"CutoffSlop","min":0,"max":100,"dec":2},"OPT:GSlop":{"i":23,"kind":"continuous","name":"GlideSlop","min":0,"max":100,"dec":2},"OPT:PSlop":{"i":24,"kind":"continuous","name":"PWSlop","min":0,"max":100,"dec":2},"OPT:ESlop":{"i":25,"kind":"continuous","name":"EnvrateSlop","min":0,"max":100,"dec":2},"OPT:V1Mod":{"i":26,"kind":"continuous","name":"V1Mod","min":-100,"max":100,"dec":2},"OPT:V2Mod":{"i":27,"kind":"continuous","name":"V2Mod","min":-100,"max":100,"dec":2},"OPT:V3Mod":{"i":28,"kind":"continuous","name":"V3Mod","min":-100,"max":100,"dec":2},"OPT:V4Mod":{"i":29,"kind":"continuous","name":"V4Mod","min":-100,"max":100,"dec":2},"OPT:V5Mod":{"i":30,"kind":"continuous","name":"V5Mod","min":-100,"max":100,"dec":2},"OPT:V6Mod":{"i":31,"kind":"continuous","name":"V6Mod","min":-100,"max":100,"dec":2},"OPT:V7Mod":{"i":32,"kind":"continuous","name":"V7Mod","min":-100,"max":100,"dec":2},"OPT:V8Mod":{"i":33,"kind":"continuous","name":"V8Mod","min":-100,"max":100,"dec":2},"ENV1:Atk":{"i":34,"kind":"continuous","name":"Attack","min":0,"max":100,"dec":2},"ENV1:Dec":{"i":35,"kind":"continuous","name":"Decay","min":0,"max":100,"dec":2},"ENV1:Sus":{"i":36,"kind":"continuous","name":"Sustain","min":0,"max":100,"dec":2},"ENV1:Rel":{"i":37,"kind":"continuous","name":"Release","min":0,"max":100,"dec":2},"ENV1:Vel":{"i":38,"kind":"continuous","name":"Velocity","min":0,"max":100,"dec":2},"ENV1:Model":{"i":39,"kind":"enum","name":"Model","options":["ADS","analogue","digital"]},"ENV1:Quant":{"i":41,"kind":"steps","name":"Quantise","options":["0","1"]},"ENV1:Crve":{"i":42,"kind":"steps","name":"Curve","options":["0","1"]},"ENV1:RelOn":{"i":43,"kind":"steps","name":"Release On","options":["0","1"]},"ENV1:KeyFlw":{"i":44,"kind":"continuous","name":"KeyFollow","min":0,"max":100,"dec":2},"ENV2:Atk":{"i":45,"kind":"continuous","name":"Attack","min":0,"max":100,"dec":2},"ENV2:Dec":{"i":46,"kind":"continuous","name":"Decay","min":0,"max":100,"dec":2},"ENV2:Sus":{"i":47,"kind":"continuous","name":"Sustain","min":0,"max":100,"dec":2},"ENV2:Rel":{"i":48,"kind":"continuous","name":"Release","min":0,"max":100,"dec":2},"ENV2:Vel":{"i":49,"kind":"continuous","name":"Velocity","min":0,"max":100,"dec":2},"ENV2:Model":{"i":50,"kind":"enum","name":"Model","options":["ADS","analogue","digital"]},"ENV2:Quant":{"i":52,"kind":"steps","name":"Quantise","options":["0","1"]},"ENV2:Crve":{"i":53,"kind":"steps","name":"Curve","options":["0","1"]},"ENV2:RelOn":{"i":54,"kind":"steps","name":"Release On","options":["0","1"]},"ENV2:KeyFlw":{"i":55,"kind":"continuous","name":"KeyFollow","min":0,"max":100,"dec":2},"LFO1:Sync":{"i":56,"kind":"enum","name":"Sync","options":["0.1s","1s","10s","1/64","1/32","1/16","1/8","1/4","1/2","1/1","1/32 dot","1/16 dot","1/8 dot","1/4 dot","1/2 dot","1/16 trip","1/8 trip","1/4 trip","1/2 trip","1/1 trip","2/1","3/1","4/1","5/1","6/1","7/1","8/1"]},"LFO1:Trig":{"i":57,"kind":"enum","name":"Restart","options":["sync","gate","single","random"]},"LFO1:Wave":{"i":58,"kind":"enum","name":"Waveform","options":["sine","triangle","saw up","saw down","sqr hi-lo","sqr lo-hi","rand hold","rand glide"]},"LFO1:Phse":{"i":59,"kind":"continuous","name":"Phase","min":0,"max":100,"dec":2},"LFO1:Dly":{"i":60,"kind":"continuous","name":"Delay","min":0,"max":100,"dec":2},"LFO1:DMS1":{"i":61,"kind":"enum","name":"DepthMod Src1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"LFO1:DMD1":{"i":62,"kind":"continuous","name":"DepthMod Dpt1","min":0,"max":100,"dec":2},"LFO1:Rate":{"i":63,"kind":"continuous","name":"Rate","min":-5,"max":5,"dec":2},"LFO1:FMS1":{"i":64,"kind":"enum","name":"FreqMod Src1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"LFO1:FMD1":{"i":65,"kind":"continuous","name":"FreqMod Dpt","min":-5,"max":5,"dec":2},"LFO1:Polar":{"i":66,"kind":"enum","name":"Polarity","options":["bipolar","positive"]},"LFO2:Sync":{"i":67,"kind":"enum","name":"Sync","options":["0.1s","1s","10s","1/64","1/32","1/16","1/8","1/4","1/2","1/1","1/32 dot","1/16 dot","1/8 dot","1/4 dot","1/2 dot","1/16 trip","1/8 trip","1/4 trip","1/2 trip","1/1 trip","2/1","3/1","4/1","5/1","6/1","7/1","8/1"]},"LFO2:Trig":{"i":68,"kind":"enum","name":"Restart","options":["sync","gate","single","random"]},"LFO2:Wave":{"i":69,"kind":"enum","name":"Waveform","options":["sine","triangle","saw up","saw down","sqr hi-lo","sqr lo-hi","rand hold","rand glide"]},"LFO2:Phse":{"i":70,"kind":"continuous","name":"Phase","min":0,"max":100,"dec":2},"LFO2:Dly":{"i":71,"kind":"continuous","name":"Delay","min":0,"max":100,"dec":2},"LFO2:DMS1":{"i":72,"kind":"enum","name":"DepthMod Src1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"LFO2:DMD1":{"i":73,"kind":"continuous","name":"DepthMod Dpt1","min":0,"max":100,"dec":2},"LFO2:Rate":{"i":74,"kind":"continuous","name":"Rate","min":-5,"max":5,"dec":2},"LFO2:FMS1":{"i":75,"kind":"enum","name":"FreqMod Src1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"LFO2:FMD1":{"i":76,"kind":"continuous","name":"FreqMod Dpt","min":-5,"max":5,"dec":2},"LFO2:Polar":{"i":77,"kind":"enum","name":"Polarity","options":["bipolar","positive"]},"MOD:Quant":{"i":78,"kind":"continuous","name":"Quantise","min":2,"max":100,"dec":2},"MOD:Slew":{"i":79,"kind":"continuous","name":"Slew Rate","min":0,"max":100,"dec":2},"MOD:RSrc":{"i":80,"kind":"enum","name":"RectifySource","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:ISrc":{"i":81,"kind":"enum","name":"InvertSource","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:QSrc":{"i":82,"kind":"enum","name":"QuantiseSource","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:LSrc":{"i":83,"kind":"enum","name":"LagSource","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:A1Src":{"i":84,"kind":"enum","name":"AddSource1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:A2Src":{"i":85,"kind":"enum","name":"AddSource2","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:M1Src":{"i":86,"kind":"enum","name":"MulSource1","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"MOD:M2Src":{"i":87,"kind":"enum","name":"MulSource2","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:Model":{"i":88,"kind":"enum","name":"Model","options":["Triple VCO","Dual VCO","DCO","Dual VCO Eco","Digital"]},"OSC:Tune1":{"i":89,"kind":"continuous","name":"Tune1","min":-30,"max":30,"dec":2},"OSC:Tune2":{"i":90,"kind":"continuous","name":"Tune2","min":-30,"max":30,"dec":2},"OSC:Tune3":{"i":91,"kind":"continuous","name":"Tune3","min":-30,"max":30,"dec":2},"OSC:VtoD":{"i":92,"kind":"continuous","name":"Vibrato","min":0,"max":100,"dec":2},"OSC:PW":{"i":93,"kind":"continuous","name":"PulseWidth","min":0,"max":100,"dec":2},"OSC:Shape1":{"i":94,"kind":"continuous","name":"Shape1","min":1,"max":9,"dec":2},"OSC:Shape2":{"i":95,"kind":"continuous","name":"Shape2","min":1,"max":9,"dec":2},"OSC:Shape3":{"i":96,"kind":"continuous","name":"Shape3","min":1,"max":9,"dec":2},"OSC:FM":{"i":97,"kind":"continuous","name":"FM","min":0,"max":100,"dec":2},"OSC:Sync2":{"i":98,"kind":"steps","name":"Sync2","options":["0","1"]},"OSC:OscMix":{"i":99,"kind":"continuous","name":"OscMix","min":0,"max":100,"dec":2},"OSC:Vol1":{"i":100,"kind":"continuous","name":"Volume1","min":0,"max":100,"dec":2},"OSC:Vol2":{"i":101,"kind":"continuous","name":"Volume2","min":0,"max":100,"dec":2},"OSC:Vol3":{"i":102,"kind":"continuous","name":"Volume3","min":0,"max":100,"dec":2},"OSC:PWShp":{"i":103,"kind":"enum","name":"PulseShape","options":["off","__--","___-","pwm"]},"OSC:SawShp":{"i":104,"kind":"enum","name":"SawShape","options":["off","/|","_/|_/|","pwm","||||||","||  ||"]},"OSC:SubShp":{"i":105,"kind":"enum","name":"SuboscShape","options":["____----","______--","____-_-_","____||||","_____-----","_______---"]},"OSC:TM1Src":{"i":106,"kind":"enum","name":"Tune1ModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:TM1Dpt":{"i":107,"kind":"continuous","name":"Tune1ModDepth","min":-24,"max":24,"dec":2},"OSC:TM2Src":{"i":108,"kind":"enum","name":"Tune2ModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:TM2Dpt":{"i":109,"kind":"continuous","name":"Tune2ModDepth","min":-24,"max":24,"dec":2},"OSC:PWMSrc":{"i":110,"kind":"enum","name":"PWModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:PWMDpt":{"i":111,"kind":"continuous","name":"PWModDepth","min":-50,"max":50,"dec":2},"OSC:Sh1Src":{"i":112,"kind":"enum","name":"ShapeSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:Sh1Dpt":{"i":113,"kind":"continuous","name":"ShapeDepth","min":-50,"max":50,"dec":2},"OSC:Tri1":{"i":114,"kind":"steps","name":"Triangle1On","options":["0","1"]},"OSC:Sin2":{"i":115,"kind":"steps","name":"Sine2On","options":["0","1"]},"OSC:Saw1":{"i":116,"kind":"steps","name":"Saw1On","options":["0","1"]},"OSC:PWM1":{"i":117,"kind":"steps","name":"Pwm1On","options":["0","1"]},"OSC:Tri2":{"i":118,"kind":"steps","name":"Triangle2On","options":["0","1"]},"OSC:Saw2":{"i":119,"kind":"steps","name":"Saw2On","options":["0","1"]},"OSC:PW2":{"i":120,"kind":"steps","name":"Pulse2On","options":["0","1"]},"OSC:PWM2":{"i":121,"kind":"steps","name":"PWM2On","options":["0","1"]},"OSC:Noise1":{"i":122,"kind":"steps","name":"Noise1On","options":["0","1"]},"OSC:triSp":{"i":123,"kind":"enum","name":"ShapeModel","options":["ideal","analog1","analog2"]},"OSC:Sync3":{"i":124,"kind":"steps","name":"Sync3","options":["0","1"]},"OSC:Noise":{"i":125,"kind":"continuous","name":"NoiseVol","min":0,"max":100,"dec":2},"OSC:NoiseC":{"i":126,"kind":"enum","name":"NoiseColor","options":["white","pink"]},"OSC:TM1On":{"i":127,"kind":"steps","name":"TuneModOsc1","options":["0","1"]},"OSC:TM2On":{"i":128,"kind":"steps","name":"TuneModOsc2","options":["0","1"]},"OSC:TM3On":{"i":129,"kind":"steps","name":"TuneModOsc3","options":["0","1"]},"OSC:SM1On":{"i":130,"kind":"steps","name":"ShapeModOsc1","options":["0","1"]},"OSC:SM2On":{"i":131,"kind":"steps","name":"ShapeModOsc2","options":["0","1"]},"OSC:SM3On":{"i":132,"kind":"steps","name":"ShapeModOsc3","options":["0","1"]},"OSC:TMmode":{"i":133,"kind":"enum","name":"TuneModMode","options":["2->1, 1->1","1->1, 2->1, 1->2, 2->2","2->2, 1->2","1->1, 2->2"]},"OSC:Wave1":{"i":134,"kind":"continuous","name":"EcoWave1","min":1,"max":4,"dec":2},"OSC:Wave2":{"i":135,"kind":"continuous","name":"EcoWave2","min":1,"max":4,"dec":2},"OSC:RMPwm":{"i":136,"kind":"steps","name":"RingmodPulse","options":["0","1"]},"OSC:Drift":{"i":137,"kind":"continuous","name":"Drift","min":0,"max":200,"dec":2},"OSC:FmSrc":{"i":138,"kind":"enum","name":"FmModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:FmDpt":{"i":139,"kind":"continuous","name":"FmModDepth","min":-100,"max":100,"dec":2},"OSC:NoisSrc":{"i":140,"kind":"enum","name":"NoiseVolModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"OSC:NoisDpt":{"i":141,"kind":"continuous","name":"NoiseVolModDepth","min":-100,"max":100,"dec":2},"OSC:DgtlSp2":{"i":142,"kind":"continuous","name":"DigitalShape2","min":0,"max":100,"dec":2},"OSC:DgtlSp3":{"i":143,"kind":"continuous","name":"DigitalShape3","min":0,"max":100,"dec":2},"OSC:DgtlSp4":{"i":144,"kind":"continuous","name":"DigitalShape4","min":0,"max":100,"dec":2},"OSC:DgtlTp1":{"i":145,"kind":"enum","name":"DigitalType1","options":["Multisaw","TriWrap","Noise","Feedback","Pulse","Saw","Triangle"]},"OSC:DgtlTp2":{"i":146,"kind":"enum","name":"DigitalType2","options":["Multisaw","TriWrap","Noise","Feedback","Pulse","Saw","Triangle"]},"OSC:DNoAlia":{"i":147,"kind":"steps","name":"DigitalAntiAlias","options":["0","1"]},"HPF:Model":{"i":148,"kind":"enum","name":"Model","options":["Feedback","HPF post","HPF pre","HPF BITE"]},"HPF:Freq":{"i":149,"kind":"continuous","name":"Frequency","min":30,"max":150,"dec":2},"HPF:Res":{"i":150,"kind":"continuous","name":"Resonance","min":0,"max":100,"dec":2},"HPF:Rev":{"i":151,"kind":"steps","name":"Revision","options":["1","2"]},"HPF:FMSrc":{"i":153,"kind":"enum","name":"FreqModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"HPF:FMDpt":{"i":154,"kind":"continuous","name":"FreqModDepth","min":-120,"max":120,"dec":2},"HPF:PFreq":{"i":155,"kind":"steps","name":"Post-HPF Freq","options":["-1","0","1","2","3"]},"VCF1:Model":{"i":156,"kind":"enum","name":"Model","options":["Ladder","Cascade","Multimode","BITE","Uhbie"]},"VCF1:Freq":{"i":157,"kind":"continuous","name":"Frequency","min":30,"max":150,"dec":2},"VCF1:Res":{"i":158,"kind":"continuous","name":"Resonance","min":0,"max":100,"dec":2},"VCF1:FMSrc":{"i":159,"kind":"enum","name":"FreqModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:FMDpt":{"i":160,"kind":"continuous","name":"FreqModDepth","min":-120,"max":120,"dec":2},"VCF1:FM2Src":{"i":161,"kind":"enum","name":"FreqMod2Src","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:FM2Dpt":{"i":162,"kind":"continuous","name":"FreqMod2Depth","min":-120,"max":120,"dec":2},"VCF1:KeyScl":{"i":163,"kind":"continuous","name":"KeyFollow","min":0,"max":100,"dec":2},"VCF1:FFM":{"i":164,"kind":"continuous","name":"FilterFM","min":-24,"max":24,"dec":2},"VCF1:LMode":{"i":165,"kind":"enum","name":"LadderMode","options":["24db","12db"]},"VCF1:LColor":{"i":166,"kind":"enum","name":"LadderColor","options":["clean","rough"]},"VCF1:SkRev":{"i":167,"kind":"steps","name":"SlnKyRevision","options":["1","2"]},"VCF1:SvfMode":{"i":168,"kind":"enum","name":"SvfMode","options":["LP 24db","LP 12db","HP","BP"]},"VCF1:Fback":{"i":169,"kind":"continuous","name":"Feedback","min":0,"max":100,"dec":2},"VCF1:ResSrc":{"i":170,"kind":"enum","name":"ResModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:ResDpt":{"i":171,"kind":"continuous","name":"ResModDepth","min":-100,"max":100,"dec":2},"VCF1:FfmSrc":{"i":172,"kind":"enum","name":"FmAmountModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:FfmDpt":{"i":173,"kind":"continuous","name":"FmAmountModDepth","min":-24,"max":24,"dec":2},"VCF1:FbSrc":{"i":174,"kind":"enum","name":"FeedbackModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:FbDpt":{"i":175,"kind":"continuous","name":"FeedbackModDepth","min":-100,"max":100,"dec":2},"VCF1:ShpMix":{"i":176,"kind":"continuous","name":"ShapeMix","min":0,"max":100,"dec":2},"VCF1:SMSrc":{"i":177,"kind":"enum","name":"ShapeModSrc","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCF1:SMDpt":{"i":178,"kind":"continuous","name":"ShapeModDepth","min":-100,"max":100,"dec":2},"VCF1:BpUbie":{"i":179,"kind":"steps","name":"UhbieBandpass","options":["0","1"]},"VCA1:Pan":{"i":180,"kind":"continuous","name":"Pan","min":-100,"max":100,"dec":2},"VCA1:Vol":{"i":181,"kind":"continuous","name":"Volume","min":0,"max":100,"dec":2},"VCA1:VCA":{"i":182,"kind":"enum","name":"VCA","options":["Gate","Env1"]},"VCA1:ModSrc":{"i":183,"kind":"enum","name":"Modulation","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCA1:ModDpt":{"i":184,"kind":"continuous","name":"ModDepth","min":-100,"max":100,"dec":2},"VCA1:PanSrc":{"i":185,"kind":"enum","name":"PanModulation","options":["none","ModWhl","PitchW","CtrlA","CtrlB","Gate","Velocity","Pressure","KeyFollow","KeyFollow2","Alternate","Random","StackVoice","VoiceMap","Env1","Env2","LFO1","LFO2","Rectify","Invert","Quant","Lag","Adder","Multiply"]},"VCA1:PanDpt":{"i":186,"kind":"continuous","name":"PanModDepth","min":-100,"max":100,"dec":2},"FX1:Module":{"i":191,"kind":"enum","name":"Module","options":["Chorus1","Phaser1","Plate1","Delay1","Rotary1"]},"Chrs1:Type":{"i":192,"kind":"enum","name":"Type","options":["Classic","Dramatic","Ensemble"]},"Chrs1:Rate":{"i":193,"kind":"continuous","name":"Rate","min":0,"max":100,"dec":2},"Chrs1:Depth":{"i":194,"kind":"continuous","name":"Depth","min":0,"max":100,"dec":2},"Chrs1:Wet":{"i":195,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Phase1:Type":{"i":196,"kind":"enum","name":"Type","options":["Stoned","Flanged"]},"Phase1:Rate":{"i":197,"kind":"continuous","name":"Rate","min":0,"max":100,"dec":2},"Phase1:FB":{"i":198,"kind":"continuous","name":"Feedback","min":0,"max":100,"dec":2},"Phase1:Stereo":{"i":199,"kind":"continuous","name":"Stereo","min":-50,"max":50,"dec":2},"Phase1:Sync":{"i":200,"kind":"steps","name":"Sync","options":["0","1"]},"Phase1:Phase":{"i":201,"kind":"continuous","name":"Phase","min":0,"max":100,"dec":2},"Phase1:Wet":{"i":202,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Phase1:Depth":{"i":203,"kind":"continuous","name":"Depth","min":0,"max":100,"dec":2},"Phase1:Center":{"i":204,"kind":"continuous","name":"Center","min":0,"max":100,"dec":2},"Plate1:Pre":{"i":205,"kind":"continuous","name":"PreDelay","min":0,"max":250,"dec":2},"Plate1:Diff":{"i":206,"kind":"continuous","name":"Diffusion","min":0,"max":100,"dec":2},"Plate1:Damp":{"i":207,"kind":"continuous","name":"Damp","min":0,"max":100,"dec":2},"Plate1:Decay":{"i":208,"kind":"continuous","name":"Decay","min":0,"max":100,"dec":2},"Plate1:Size":{"i":209,"kind":"continuous","name":"Size","min":1,"max":200,"dec":2},"Plate1:Dry":{"i":210,"kind":"continuous","name":"Dry","min":0,"max":100,"dec":2},"Plate1:Wet":{"i":211,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Delay1:LDel":{"i":212,"kind":"continuous","name":"Left Delay","min":1,"max":16,"dec":2},"Delay1:CDel":{"i":213,"kind":"continuous","name":"Center Delay","min":1,"max":16,"dec":2},"Delay1:RDel":{"i":214,"kind":"continuous","name":"Right Delay","min":1,"max":16,"dec":2},"Delay1:SVol":{"i":215,"kind":"continuous","name":"Side Vol","min":0,"max":100,"dec":2},"Delay1:CVol":{"i":216,"kind":"continuous","name":"Center Vol","min":0,"max":100,"dec":2},"Delay1:FeedB":{"i":217,"kind":"continuous","name":"Feedback","min":0,"max":100,"dec":2},"Delay1:HP":{"i":218,"kind":"continuous","name":"HP","min":0,"max":100,"dec":2},"Delay1:LP":{"i":219,"kind":"continuous","name":"LP","min":0,"max":100,"dec":2},"Delay1:Dry":{"i":220,"kind":"continuous","name":"Dry","min":0,"max":100,"dec":2},"Delay1:Wow":{"i":221,"kind":"continuous","name":"Wow","min":0,"max":100,"dec":2},"Rtary1:Mode":{"i":222,"kind":"enum","name":"Mode","options":["Normal","SyncBass","NoBass"]},"Rtary1:Mix":{"i":223,"kind":"continuous","name":"Mix","min":0,"max":100,"dec":2},"Rtary1:Bal":{"i":224,"kind":"continuous","name":"Balance","min":0,"max":100,"dec":2},"Rtary1:Drive":{"i":225,"kind":"continuous","name":"Drive","min":0,"max":100,"dec":2},"Rtary1:Stereo":{"i":226,"kind":"continuous","name":"Stereo","min":0,"max":100,"dec":2},"Rtary1:Out":{"i":227,"kind":"continuous","name":"Out","min":-20,"max":20,"dec":2},"Rtary1:Slow":{"i":228,"kind":"continuous","name":"Slow","min":0,"max":100,"dec":2},"Rtary1:Fast":{"i":229,"kind":"continuous","name":"Fast","min":0,"max":100,"dec":2},"Rtary1:RTime":{"i":230,"kind":"continuous","name":"RiseTime","min":0,"max":100,"dec":2},"Rtary1:Cont":{"i":231,"kind":"enum","name":"Controller","options":["ModWheel","Control A","Control B","Pressure"]},"FX2:Module":{"i":232,"kind":"enum","name":"Module","options":["Chorus2","Phaser2","Plate2","Delay2","Rotary2"]},"Chrs2:Type":{"i":233,"kind":"enum","name":"Type","options":["Classic","Dramatic","Ensemble"]},"Chrs2:Rate":{"i":234,"kind":"continuous","name":"Rate","min":0,"max":100,"dec":2},"Chrs2:Depth":{"i":235,"kind":"continuous","name":"Depth","min":0,"max":100,"dec":2},"Chrs2:Wet":{"i":236,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Phase2:Type":{"i":237,"kind":"enum","name":"Type","options":["Stoned","Flanged"]},"Phase2:Rate":{"i":238,"kind":"continuous","name":"Rate","min":0,"max":100,"dec":2},"Phase2:FB":{"i":239,"kind":"continuous","name":"Feedback","min":0,"max":100,"dec":2},"Phase2:Stereo":{"i":240,"kind":"continuous","name":"Stereo","min":-50,"max":50,"dec":2},"Phase2:Sync":{"i":241,"kind":"steps","name":"Sync","options":["0","1"]},"Phase2:Phase":{"i":242,"kind":"continuous","name":"Phase","min":0,"max":100,"dec":2},"Phase2:Wet":{"i":243,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Phase2:Depth":{"i":244,"kind":"continuous","name":"Depth","min":0,"max":100,"dec":2},"Phase2:Center":{"i":245,"kind":"continuous","name":"Center","min":0,"max":100,"dec":2},"Plate2:Pre":{"i":246,"kind":"continuous","name":"PreDelay","min":0,"max":250,"dec":2},"Plate2:Diff":{"i":247,"kind":"continuous","name":"Diffusion","min":0,"max":100,"dec":2},"Plate2:Damp":{"i":248,"kind":"continuous","name":"Damp","min":0,"max":100,"dec":2},"Plate2:Decay":{"i":249,"kind":"continuous","name":"Decay","min":0,"max":100,"dec":2},"Plate2:Size":{"i":250,"kind":"continuous","name":"Size","min":1,"max":200,"dec":2},"Plate2:Dry":{"i":251,"kind":"continuous","name":"Dry","min":0,"max":100,"dec":2},"Plate2:Wet":{"i":252,"kind":"continuous","name":"Wet","min":0,"max":100,"dec":2},"Delay2:LDel":{"i":253,"kind":"continuous","name":"Left Delay","min":1,"max":16,"dec":2},"Delay2:CDel":{"i":254,"kind":"continuous","name":"Center Delay","min":1,"max":16,"dec":2},"Delay2:RDel":{"i":255,"kind":"continuous","name":"Right Delay","min":1,"max":16,"dec":2},"Delay2:SVol":{"i":256,"kind":"continuous","name":"Side Vol","min":0,"max":100,"dec":2},"Delay2:CVol":{"i":257,"kind":"continuous","name":"Center Vol","min":0,"max":100,"dec":2},"Delay2:FeedB":{"i":258,"kind":"continuous","name":"Feedback","min":0,"max":100,"dec":2},"Delay2:HP":{"i":259,"kind":"continuous","name":"HP","min":0,"max":100,"dec":2},"Delay2:LP":{"i":260,"kind":"continuous","name":"LP","min":0,"max":100,"dec":2},"Delay2:Dry":{"i":261,"kind":"continuous","name":"Dry","min":0,"max":100,"dec":2},"Delay2:Wow":{"i":262,"kind":"continuous","name":"Wow","min":0,"max":100,"dec":2},"Rtary2:Mode":{"i":263,"kind":"enum","name":"Mode","options":["Normal","SyncBass","NoBass"]},"Rtary2:Mix":{"i":264,"kind":"continuous","name":"Mix","min":0,"max":100,"dec":2},"Rtary2:Bal":{"i":265,"kind":"continuous","name":"Balance","min":0,"max":100,"dec":2},"Rtary2:Drive":{"i":266,"kind":"continuous","name":"Drive","min":0,"max":100,"dec":2},"Rtary2:Stereo":{"i":267,"kind":"continuous","name":"Stereo","min":0,"max":100,"dec":2},"Rtary2:Out":{"i":268,"kind":"continuous","name":"Out","min":-20,"max":20,"dec":2},"Rtary2:Slow":{"i":269,"kind":"continuous","name":"Slow","min":0,"max":100,"dec":2},"Rtary2:Fast":{"i":270,"kind":"continuous","name":"Fast","min":0,"max":100,"dec":2},"Rtary2:RTime":{"i":271,"kind":"continuous","name":"RiseTime","min":0,"max":100,"dec":2},"Rtary2:Cont":{"i":272,"kind":"enum","name":"Controller","options":["ModWheel","Control A","Control B","Pressure"]},"CLK:Mult":{"i":273,"kind":"continuous","name":"Multiply","min":50,"max":200,"dec":2},"CLK:Base":{"i":274,"kind":"enum","name":"TimeBase","options":["1/32","1/16","1/8","1/4"]},"CLK:Swing":{"i":275,"kind":"continuous","name":"Swing","min":0,"max":100,"dec":2},"ARP:Dir":{"i":276,"kind":"enum","name":"Direction","options":["played","up","down","up+dn 1","up+dn 2","random"]},"ARP:Oct":{"i":277,"kind":"steps","name":"Octaves","options":["1","2","3","4"]},"ARP:Rstrt":{"i":279,"kind":"enum","name":"Restart","options":["none","4","5","6","7","8","9","10","12","14","16","24","32"]},"ARP:OnOff":{"i":280,"kind":"enum","name":"OnOff","options":["Off","On"]},"ARP:Order":{"i":281,"kind":"enum","name":"Order","options":["serial","round","leap","repeat"]}},"values":{"main:CcOp":0.37,"main:#FX1":0,"main:#FX2":1,"VCC:Voices":0.571429,"VCC:Voicing":0,"VCC:Mode":0,"VCC:PortaM":0,"VCC:Porta":0.08,"VCC:Porta2":0.5,"VCC:PRange":1,"VCC:PB":0.111111,"VCC:PBD":0.259259,"VCC:MTunS":0,"VCC:Trsp":0.25,"VCC:FTun":0.5,"VCC:Prior":0,"OPT:Acc":0.666667,"OPT:OffAcc":0,"OPT:TSlop":0.25,"OPT:CSlop":0.16,"OPT:GSlop":0.24,"OPT:PSlop":0.33,"OPT:ESlop":0.26,"OPT:V1Mod":0.5,"OPT:V2Mod":0.5,"OPT:V3Mod":0.5,"OPT:V4Mod":0.5,"OPT:V5Mod":0.5,"OPT:V6Mod":0.5,"OPT:V7Mod":0.5,"OPT:V8Mod":0.5,"ENV1:Atk":0.15,"ENV1:Dec":0.335,"ENV1:Sus":0.8,"ENV1:Rel":0.35,"ENV1:Vel":0,"ENV1:Model":0,"ENV1:Quant":0,"ENV1:Crve":0,"ENV1:RelOn":1,"ENV1:KeyFlw":0,"ENV2:Atk":0,"ENV2:Dec":0.45,"ENV2:Sus":0.32,"ENV2:Rel":0.37,"ENV2:Vel":0.85,"ENV2:Model":0,"ENV2:Quant":0,"ENV2:Crve":0,"ENV2:RelOn":0,"ENV2:KeyFlw":0.24,"LFO1:Sync":0.038462,"LFO1:Trig":1,"LFO1:Wave":0,"LFO1:Phse":0,"LFO1:Dly":0.26,"LFO1:DMS1":0.043478,"LFO1:DMD1":0.9,"LFO1:Rate":0.66,"LFO1:FMS1":0.043478,"LFO1:FMD1":0.56,"LFO1:Polar":0,"LFO2:Sync":0.038462,"LFO2:Trig":0.333333,"LFO2:Wave":0.142857,"LFO2:Phse":0,"LFO2:Dly":0.6,"LFO2:DMS1":0,"LFO2:DMD1":0,"LFO2:Rate":0.5,"LFO2:FMS1":0,"LFO2:FMD1":0.5,"LFO2:Polar":0,"MOD:Quant":0,"MOD:Slew":0.5,"MOD:RSrc":0,"MOD:ISrc":0,"MOD:QSrc":0,"MOD:LSrc":0.652174,"MOD:A1Src":0.26087,"MOD:A2Src":0.304348,"MOD:M1Src":0,"MOD:M2Src":0,"OSC:Model":0,"OSC:Tune1":0.5,"OSC:Tune2":0.5,"OSC:Tune3":0.5,"OSC:VtoD":0.5,"OSC:PW":0.5,"OSC:Shape1":0.5,"OSC:Shape2":0.525,"OSC:Shape3":0.5,"OSC:FM":0,"OSC:Sync2":0,"OSC:OscMix":0,"OSC:Vol1":0,"OSC:Vol2":1,"OSC:Vol3":0,"OSC:PWShp":0,"OSC:SawShp":0.2,"OSC:SubShp":0,"OSC:TM1Src":0.652174,"OSC:TM1Dpt":0.5,"OSC:TM2Src":0.73913,"OSC:TM2Dpt":0.5,"OSC:PWMSrc":0.73913,"OSC:PWMDpt":0.5,"OSC:Sh1Src":0.73913,"OSC:Sh1Dpt":0.5,"OSC:Tri1":0,"OSC:Sin2":0,"OSC:Saw1":1,"OSC:PWM1":0,"OSC:Tri2":0,"OSC:Saw2":0,"OSC:PW2":1,"OSC:PWM2":1,"OSC:Noise1":0,"OSC:triSp":0.5,"OSC:Sync3":0,"OSC:Noise":0,"OSC:NoiseC":0,"OSC:TM1On":0,"OSC:TM2On":0,"OSC:TM3On":0,"OSC:SM1On":0,"OSC:SM2On":0,"OSC:SM3On":0,"OSC:TMmode":1,"OSC:Wave1":0,"OSC:Wave2":0,"OSC:RMPwm":0,"OSC:Drift":0.21,"OSC:FmSrc":0,"OSC:FmDpt":0.5,"OSC:NoisSrc":0,"OSC:NoisDpt":0.5,"OSC:DgtlSp2":0,"OSC:DgtlSp3":0.5,"OSC:DgtlSp4":0,"OSC:DgtlTp1":0,"OSC:DgtlTp2":0,"OSC:DNoAlia":0,"HPF:Model":0,"HPF:Freq":0,"HPF:Res":0,"HPF:Rev":0,"HPF:FMSrc":0.652174,"HPF:FMDpt":0.5,"HPF:PFreq":0,"VCF1:Model":0,"VCF1:Freq":0.091667,"VCF1:Res":0,"VCF1:FMSrc":0.913043,"VCF1:FMDpt":1,"VCF1:FM2Src":0.956522,"VCF1:FM2Dpt":0.533333,"VCF1:KeyScl":0.4,"VCF1:FFM":0.5,"VCF1:LMode":0,"VCF1:LColor":1,"VCF1:SkRev":0,"VCF1:SvfMode":0,"VCF1:Fback":0.2,"VCF1:ResSrc":0,"VCF1:ResDpt":0.5,"VCF1:FfmSrc":0,"VCF1:FfmDpt":0.5,"VCF1:FbSrc":0,"VCF1:FbDpt":0.5,"VCF1:ShpMix":0,"VCF1:SMSrc":0.73913,"VCF1:SMDpt":0.5,"VCF1:BpUbie":0,"VCA1:Pan":0.5,"VCA1:Vol":0.485,"VCA1:VCA":1,"VCA1:ModSrc":0.695652,"VCA1:ModDpt":0.43,"VCA1:PanSrc":0,"VCA1:PanDpt":0.51,"FX1:Module":0,"Chrs1:Type":0.5,"Chrs1:Rate":0.12,"Chrs1:Depth":0.155,"Chrs1:Wet":0.725,"Phase1:Type":0,"Phase1:Rate":0.5,"Phase1:FB":0,"Phase1:Stereo":0.5,"Phase1:Sync":0,"Phase1:Phase":0,"Phase1:Wet":1,"Phase1:Depth":1,"Phase1:Center":0.5,"Plate1:Pre":0,"Plate1:Diff":1,"Plate1:Damp":0.8,"Plate1:Decay":0.5,"Plate1:Size":0.748744,"Plate1:Dry":0.9,"Plate1:Wet":0.4,"Delay1:LDel":0.066667,"Delay1:CDel":0.2,"Delay1:RDel":0.2,"Delay1:SVol":0.2,"Delay1:CVol":0,"Delay1:FeedB":0.25,"Delay1:HP":0,"Delay1:LP":1,"Delay1:Dry":1,"Delay1:Wow":0.5,"Rtary1:Mode":0,"Rtary1:Mix":1,"Rtary1:Bal":0.5,"Rtary1:Drive":0,"Rtary1:Stereo":1,"Rtary1:Out":0.5,"Rtary1:Slow":0.3,"Rtary1:Fast":0.85,"Rtary1:RTime":0.5,"Rtary1:Cont":0,"FX2:Module":0.5,"Chrs2:Type":0,"Chrs2:Rate":0.5,"Chrs2:Depth":0.5,"Chrs2:Wet":1,"Phase2:Type":0,"Phase2:Rate":0.5,"Phase2:FB":0,"Phase2:Stereo":0.5,"Phase2:Sync":0,"Phase2:Phase":0,"Phase2:Wet":1,"Phase2:Depth":1,"Phase2:Center":0.5,"Plate2:Pre":0,"Plate2:Diff":0.92,"Plate2:Damp":0.86,"Plate2:Decay":0.45,"Plate2:Size":0.768844,"Plate2:Dry":0.8,"Plate2:Wet":0.1,"Delay2:LDel":0.066667,"Delay2:CDel":0.2,"Delay2:RDel":0.2,"Delay2:SVol":0.2,"Delay2:CVol":0,"Delay2:FeedB":0.25,"Delay2:HP":0,"Delay2:LP":1,"Delay2:Dry":1,"Delay2:Wow":0.5,"Rtary2:Mode":0,"Rtary2:Mix":1,"Rtary2:Bal":0.5,"Rtary2:Drive":0,"Rtary2:Stereo":1,"Rtary2:Out":0.5,"Rtary2:Slow":0.3,"Rtary2:Fast":0.85,"Rtary2:RTime":0.5,"Rtary2:Cont":0,"CLK:Mult":0.333333,"CLK:Base":0.666667,"CLK:Swing":0,"ARP:Dir":0.2,"ARP:Oct":0,"ARP:Rstrt":0,"ARP:OnOff":0,"ARP:Order":0},"preset":"Diva default patch"};
+</script>
+<script>
+// Short parameter names and list texts shown on Push (generated from the device).
+window.DW_SN = {"ARP:Dir": "Arp Mode", "ARP:Oct": "Octaves", "ARP:OnOff": "Arp", "ARP:Order": "Progression", "ARP:Rstrt": "Arp Restart", "CLK:Base": "Clock", "CLK:Mult": "Multiply", "CLK:Swing": "Swing", "Chrs1:Depth": "Chorus1 Depth", "Chrs1:Rate": "Chorus1 Rate", "Chrs1:Type": "Chorus1 Type", "Chrs1:Wet": "Chorus1 Wet", "Chrs2:Depth": "Chorus2 Depth", "Chrs2:Rate": "Chorus2 Rate", "Chrs2:Type": "Chorus2 Type", "Chrs2:Wet": "Chorus2 Wet", "Delay1:CDel": "Delay1 Center", "Delay1:CVol": "Delay1 Center Vol", "Delay1:Dry": "Delay1 Dry", "Delay1:FeedB": "Delay1 Feedback", "Delay1:HP": "Delay1 HP", "Delay1:LDel": "Delay1 Left", "Delay1:LP": "Delay1 LP", "Delay1:RDel": "Delay1 Right", "Delay1:SVol": "Delay1 Side Vol", "Delay1:Wow": "Delay1 Wow", "Delay2:CDel": "Delay2 Center", "Delay2:CVol": "Delay2 Center Vol", "Delay2:Dry": "Delay2 Dry", "Delay2:FeedB": "Delay2 Feedback", "Delay2:HP": "Delay2 HP", "Delay2:LDel": "Delay2 Left", "Delay2:LP": "Delay2 LP", "Delay2:RDel": "Delay2 Right", "Delay2:SVol": "Delay2 Side Vol", "Delay2:Wow": "Delay2 Wow", "ENV1:Atk": "Env1 Attack", "ENV1:Crve": "Env1 Curve", "ENV1:Dec": "Env1 Decay", "ENV1:KeyFlw": "Env1 Kybd", "ENV1:Model": "Env1 Model", "ENV1:Quant": "Env1 Quantize", "ENV1:Rel": "Env1 Release", "ENV1:RelOn": "Env1 Rel On", "ENV1:Sus": "Env1 Sustain", "ENV1:Vel": "Env1 Velocity", "ENV2:Atk": "Env2 Attack", "ENV2:Crve": "Env2 Curve", "ENV2:Dec": "Env2 Decay", "ENV2:KeyFlw": "Env2 Kybd", "ENV2:Model": "Env2 Model", "ENV2:Quant": "Env2 Quantize", "ENV2:Rel": "Env2 Release", "ENV2:RelOn": "Env2 Rel On", "ENV2:Sus": "Env2 Sustain", "ENV2:Vel": "Env2 Velocity", "FX1:Module": "FX1 Module", "FX2:Module": "FX2 Module", "HPF:FMSrc": "HPF Cutoff Mod Src", "HPF:Freq": "HPF Freq", "HPF:Model": "HPF Model", "HPF:PFreq": "HPF Post Freq", "HPF:Res": "HPF Peak", "HPF:Rev": "HPF Rev", "LFO1:DMD1": "LFO1 Depth Mod", "LFO1:DMS1": "LFO1 Depth Src", "LFO1:Dly": "LFO1 Delay", "LFO1:FMD1": "LFO1 Rate Mod", "LFO1:FMS1": "LFO1 Rate Src", "LFO1:Phse": "LFO1 Phase", "LFO1:Polar": "LFO1 Polarity", "LFO1:Rate": "LFO1 Rate", "LFO1:Sync": "LFO1 Sync", "LFO1:Trig": "LFO1 Restart", "LFO1:Wave": "LFO1 Waveform", "LFO2:DMD1": "LFO2 Depth Mod", "LFO2:DMS1": "LFO2 Depth Src", "LFO2:Dly": "LFO2 Delay", "LFO2:FMS1": "LFO2 Rate Src", "LFO2:Phse": "LFO2 Phase", "LFO2:Polar": "LFO2 Polarity", "LFO2:Rate": "LFO2 Rate", "LFO2:Sync": "LFO2 Sync", "LFO2:Trig": "LFO2 Restart", "LFO2:Wave": "LFO2 Waveform", "MOD:A1Src": "Add A", "MOD:A2Src": "Add B", "MOD:ISrc": "Invert", "MOD:LSrc": "Lag", "MOD:M1Src": "Multiply A", "MOD:M2Src": "Multiply B", "MOD:QSrc": "Quantize", "MOD:Quant": "Quantize Steps", "MOD:RSrc": "Rectify", "MOD:Slew": "Lag Rate", "OPT:Acc": "Accuracy", "OPT:CSlop": "Cutoff Var", "OPT:ESlop": "Env Var", "OPT:GSlop": "Glide Var", "OPT:OffAcc": "Offline Acc", "OPT:PSlop": "PW Var", "OPT:TSlop": "Detune Amt", "OPT:V1Mod": "Voice Map 1", "OPT:V2Mod": "Voice Map 2", "OPT:V3Mod": "Voice Map 3", "OPT:V4Mod": "Voice Map 4", "OPT:V5Mod": "Voice Map 5", "OPT:V6Mod": "Voice Map 6", "OPT:V7Mod": "Voice Map 7", "OPT:V8Mod": "Voice Map 8", "OSC:DNoAlia": "High Quality", "OSC:DgtlSp2": "Dgt B 1", "OSC:DgtlSp3": "Dgt A 2", "OSC:DgtlSp4": "Dgt B 2", "OSC:DgtlTp1": "Dgt Wave 1", "OSC:DgtlTp2": "Dgt Wave 2", "OSC:Drift": "Voice Drift", "OSC:FM": "FM", "OSC:FmDpt": "FM Mod", "OSC:FmSrc": "FM Mod Src", "OSC:Model": "Osc Model", "OSC:NoisSrc": "Noise Mod Src", "OSC:Noise": "Noise", "OSC:Noise1": "Noise 1 On", "OSC:NoiseC": "Noise Color", "OSC:OscMix": "Osc Mix", "OSC:PW": "Pulse Width", "OSC:PW2": "Pulse 2", "OSC:PWM1": "Pulse 1", "OSC:PWM2": "PWM 1 / 1+2", "OSC:PWMDpt": "PWM", "OSC:PWMSrc": "PWM Src", "OSC:PWShp": "Pulse Shape", "OSC:RMPwm": "Ring", "OSC:SM1On": "Shape Mod Osc 1", "OSC:SM2On": "Shape Mod Osc 2", "OSC:SM3On": "Shape Mod Osc 3", "OSC:Saw1": "Saw 1", "OSC:Saw2": "Saw 2", "OSC:SawShp": "Saw Shape", "OSC:Sh1Dpt": "Shape Mod", "OSC:Sh1Src": "Shape Mod Src", "OSC:Shape1": "Osc 1 Wave", "OSC:Shape2": "Osc 2 Wave", "OSC:Shape3": "Osc 3 Wave", "OSC:Sin2": "Sine 2", "OSC:SubShp": "Sub Shape", "OSC:Sync2": "Sync 2", "OSC:Sync3": "Sync 3", "OSC:TM1Dpt": "Tune Mod 1", "OSC:TM1On": "Tune Mod Osc 1", "OSC:TM1Src": "Tune Mod 1 Src", "OSC:TM2Dpt": "Tune Mod 2", "OSC:TM2On": "Tune Mod Osc 2", "OSC:TM2Src": "Tune Mod 2 Src", "OSC:TM3On": "Tune Mod Osc 3", "OSC:TMmode": "Tune Mod Route", "OSC:Tri1": "Triangle 1", "OSC:Tri2": "Triangle 2", "OSC:Tune1": "Osc 1 Tune", "OSC:Tune2": "Osc 2 Tune", "OSC:Tune3": "Osc 3 Tune", "OSC:Vol1": "Osc 1 Level", "OSC:Vol2": "Osc 2 Level", "OSC:Vol3": "Osc 3 Level", "OSC:VtoD": "Vibrato", "OSC:Wave1": "Eco Wave 1", "OSC:Wave2": "Eco Wave 2", "OSC:triSp": "Tri Shape", "Phase1:Center": "Phaser1 Center", "Phase1:Depth": "Phaser1 Depth", "Phase1:FB": "Phaser1 Feedback", "Phase1:Phase": "Phaser1 LFO Phase", "Phase1:Rate": "Phaser1 Rate", "Phase1:Stereo": "Phaser1 Stereo", "Phase1:Sync": "Phaser1 Sync", "Phase1:Type": "Phaser1 Type", "Phase1:Wet": "Phaser1 Wet", "Phase2:Center": "Phaser2 Center", "Phase2:Depth": "Phaser2 Depth", "Phase2:FB": "Phaser2 Feedback", "Phase2:Phase": "Phaser2 LFO Phase", "Phase2:Rate": "Phaser2 Rate", "Phase2:Stereo": "Phaser2 Stereo", "Phase2:Sync": "Phaser2 Sync", "Phase2:Type": "Phaser2 Type", "Phase2:Wet": "Phaser2 Wet", "Plate1:Damp": "Plate1 Damp", "Plate1:Decay": "Plate1 Decay", "Plate1:Diff": "Plate1 Diffusion", "Plate1:Dry": "Plate1 Dry", "Plate1:Pre": "Plate1 PreDelay", "Plate1:Size": "Plate1 Size", "Plate1:Wet": "Plate1 Wet", "Plate2:Damp": "Plate2 Damp", "Plate2:Decay": "Plate2 Decay", "Plate2:Diff": "Plate2 Diffusion", "Plate2:Dry": "Plate2 Dry", "Plate2:Pre": "Plate2 PreDelay", "Plate2:Size": "Plate2 Size", "Plate2:Wet": "Plate2 Wet", "Rtary1:Bal": "Rotary1 Balance", "Rtary1:Cont": "Rotary1 Controller", "Rtary1:Drive": "Rotary1 Drive", "Rtary1:Fast": "Rotary1 Fast", "Rtary1:Mix": "Rotary1 Mix", "Rtary1:Mode": "Rotary1 Mode", "Rtary1:Out": "Rotary1 Out", "Rtary1:RTime": "Rotary1 RiseTime", "Rtary1:Slow": "Rotary1 Slow", "Rtary2:Bal": "Rotary2 Balance", "Rtary2:Cont": "Rotary2 Controller", "Rtary2:Drive": "Rotary2 Drive", "Rtary2:Fast": "Rotary2 Fast", "Rtary2:Mix": "Rotary2 Mix", "Rtary2:Mode": "Rotary2 Mode", "Rtary2:Out": "Rotary2 Out", "Rtary2:RTime": "Rotary2 RiseTime", "Rtary2:Slow": "Rotary2 Slow", "VCA1:ModSrc": "Vol Mod Src", "VCA1:Pan": "Pan", "VCA1:PanSrc": "Pan Mod Src", "VCA1:VCA": "VCA", "VCA1:Vol": "Volume", "VCC:FTun": "Fine", "VCC:Mode": "Voice Mode", "VCC:PB": "Bend Up", "VCC:PBD": "Bend Down", "VCC:PRange": "Range", "VCC:Porta": "Glide", "VCC:Porta2": "Glide2", "VCC:PortaM": "GlideMode", "VCC:Prior": "Note Priority", "VCC:Trsp": "Transpose", "VCC:Voices": "Voices", "VCC:Voicing": "Stack", "VCF1:BpUbie": "Uhbie Mode", "VCF1:FFM": "Filter FM", "VCF1:FM2Dpt": "Cutoff Mod 2", "VCF1:FM2Src": "Cutoff Mod 2 Src", "VCF1:FMDpt": "Cutoff Mod 1", "VCF1:FMSrc": "Cutoff Mod 1 Src", "VCF1:FbSrc": "Feedback Mod Src", "VCF1:Fback": "Feedback", "VCF1:FfmSrc": "Filter FM Mod Src", "VCF1:Freq": "Cutoff", "VCF1:KeyScl": "VCF Kybd", "VCF1:LColor": "VCF Colour", "VCF1:LMode": "VCF Slope", "VCF1:Model": "VCF Model", "VCF1:Res": "Resonance", "VCF1:ResDpt": "Res Mod", "VCF1:ResSrc": "Res Mod Src", "VCF1:SMDpt": "Morph Mod", "VCF1:SMSrc": "Morph Mod Src", "VCF1:ShpMix": "Morph", "VCF1:SkRev": "Bite Rev", "VCF1:SvfMode": "VCF Mode", "main:#FX1": "FX1 On", "main:#FX2": "FX2 On", "main:CcOp": "Output", "OSC:NoisDpt": "Noise Mod", "HPF:FMDpt": "HPF Cutoff Mod", "VCF1:FfmDpt": "Filter FM Mod", "VCF1:FbDpt": "Feedback Mod", "VCA1:ModDpt": "Vol Mod", "VCA1:PanDpt": "Pan Mod", "LFO2:FMD1": "LFO2 Rate Mod", "UI:Page": "Page", "UI:XY1X": "FX1 XY X", "UI:XY1Y": "FX1 XY Y", "UI:XY2X": "FX2 XY X", "UI:XY2Y": "FX2 XY Y", "UI:Open": "Open", "UI:Follow": "Follow Push", "VCC:MTunS": "Microtuning", "Rtary2:Stereo": "Rotary2 Stereo", "Rtary1:Stereo": "Rotary1 Stereo", "UI:Oct1": "Osc 1 Octave", "UI:Oct2": "Osc 2 Octave", "UI:Oct3": "Osc 3 Octave", "UI:Det2": "Osc 2 Detune", "UI:Det3": "Osc 3 Detune", "UI:TMTo": "Tune Mod To", "UI:SMTo": "Shape Mod To", "UI:DTMTo": "Dgt Tune Mod To", "UI:DSMTo": "Dgt Shape Mod To", "UI:DPWMTo": "Dgt PWM To", "UI:Waves1": "Osc 1 Waves", "UI:Waves2": "Osc 2 Waves", "UI:E1Opt": "Env1 Digital", "UI:E2Opt": "Env2 Digital", "UI:FX1": "FX 1", "UI:FX2": "FX 2"};
+window.DW_ENUM = {"ARP:Dir": ["played", "up", "down", "up+dn 1", "up+dn 2", "random"], "ARP:Oct": ["1", "2", "3", "4"], "ARP:OnOff": ["Off", "On"], "ARP:Order": ["serial", "round", "leap", "repeat"], "ARP:Rstrt": ["none", "4", "5", "6", "7", "8", "9", "10", "12", "14", "16", "24", "32"], "CLK:Base": ["1/32", "1/16", "1/8", "1/4"], "Chrs1:Type": ["Classic", "Dramatic", "Ensemble"], "Chrs2:Type": ["Classic", "Dramatic", "Ensemble"], "ENV1:Crve": ["Off", "On"], "ENV1:Model": ["ADS", "analogue", "digital"], "ENV1:Quant": ["Off", "On"], "ENV1:RelOn": ["Off", "On"], "ENV2:Crve": ["Off", "On"], "ENV2:Model": ["ADS", "analogue", "digital"], "ENV2:Quant": ["Off", "On"], "ENV2:RelOn": ["Off", "On"], "FX1:Module": ["Chorus1", "Phaser1", "Plate1", "Delay1", "Rotary1"], "FX2:Module": ["Chorus2", "Phaser2", "Plate2", "Delay2", "Rotary2"], "HPF:FMSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "HPF:Model": ["Feedback", "HPF post", "HPF pre", "HPF BITE"], "HPF:PFreq": ["-1", "0", "1", "2", "3"], "HPF:Rev": ["1", "2"], "LFO1:DMS1": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "LFO1:FMS1": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "LFO1:Polar": ["bipolar", "positive"], "LFO1:Sync": ["0.1s", "1s", "10s", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1", "1/32D", "1/16D", "1/8D", "1/4D", "1/2D", "1/16T", "1/8T", "1/4T", "1/2T", "1/1T", "2/1", "3/1", "4/1", "5/1", "6/1", "7/1", "8/1"], "LFO1:Trig": ["sync", "gate", "single", "random"], "LFO1:Wave": ["sine", "triangle", "saw up", "saw down", "sqr hilo", "sqr lohi", "rnd hold", "rndglide"], "LFO2:DMS1": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "LFO2:FMS1": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "LFO2:Polar": ["bipolar", "positive"], "LFO2:Sync": ["0.1s", "1s", "10s", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1", "1/32D", "1/16D", "1/8D", "1/4D", "1/2D", "1/16T", "1/8T", "1/4T", "1/2T", "1/1T", "2/1", "3/1", "4/1", "5/1", "6/1", "7/1", "8/1"], "LFO2:Trig": ["sync", "gate", "single", "random"], "LFO2:Wave": ["sine", "triangle", "saw up", "saw down", "sqr hilo", "sqr lohi", "rnd hold", "rndglide"], "MOD:A1Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:A2Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:ISrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:LSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:M1Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:M2Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:QSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "MOD:RSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OPT:Acc": ["draft", "fast", "great", "divine"], "OPT:OffAcc": ["same", "best"], "OSC:DNoAlia": ["Off", "On"], "OSC:DgtlTp1": ["Multisaw", "TriWrap", "Noise", "Feedback", "Pulse", "Saw", "Triangle"], "OSC:DgtlTp2": ["Multisaw", "TriWrap", "Noise", "Feedback", "Pulse", "Saw", "Triangle"], "OSC:FmSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:Model": ["Triple", "Dual", "DCO", "Eco", "Digital"], "OSC:NoisSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:Noise1": ["Off", "On"], "OSC:NoiseC": ["white", "pink"], "OSC:PW2": ["Off", "On"], "OSC:PWM1": ["Off", "On"], "OSC:PWM2": ["Osc 1", "Osc 1+2"], "OSC:PWMSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:PWShp": ["off", "__--", "___-", "pwm"], "OSC:RMPwm": ["Off", "On"], "OSC:SM1On": ["Off", "On"], "OSC:SM2On": ["Off", "On"], "OSC:SM3On": ["Off", "On"], "OSC:Saw1": ["Off", "On"], "OSC:Saw2": ["Off", "On"], "OSC:SawShp": ["off", "/|", "_/|_/|", "pwm", "||||||", "||  ||"], "OSC:Sh1Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:Sin2": ["Off", "On"], "OSC:SubShp": ["____----", "______--", "____-_-_", "____||||", "-2 __--", "-2 ___-"], "OSC:Sync2": ["Off", "On"], "OSC:Sync3": ["Off", "On"], "OSC:TM1On": ["Off", "On"], "OSC:TM1Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:TM2On": ["Off", "On"], "OSC:TM2Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "OSC:TM3On": ["Off", "On"], "OSC:TMmode": ["Osc 1", "Both", "Osc 2", "Split"], "OSC:Tri1": ["Off", "On"], "OSC:Tri2": ["Off", "On"], "OSC:triSp": ["ideal", "analog1", "analog2"], "Phase1:Sync": ["Off", "On"], "Phase1:Type": ["Stoned", "Flanged"], "Phase2:Sync": ["Off", "On"], "Phase2:Type": ["Stoned", "Flanged"], "Rtary1:Cont": ["ModWheel", "Ctrl A", "Ctrl B", "Pressure"], "Rtary1:Mode": ["Normal", "SyncBass", "NoBass"], "Rtary2:Cont": ["ModWheel", "Ctrl A", "Ctrl B", "Pressure"], "Rtary2:Mode": ["Normal", "SyncBass", "NoBass"], "VCA1:ModSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCA1:PanSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCA1:VCA": ["Gate", "Env1"], "VCC:Mode": ["poly", "mono", "legato", "duo", "poly2"], "VCC:PB": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "36", "48", "MPE"], "VCC:PBD": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "36", "48", "MPE"], "VCC:PortaM": ["time", "rate"], "VCC:Prior": ["last", "lowest", "highest"], "VCC:Trsp": ["-24", "-23", "-22", "-21", "-20", "-19", "-18", "-17", "-16", "-15", "-14", "-13", "-12", "-11", "-10", "-9", "-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24"], "VCC:Voices": ["2", "3", "4", "5", "6", "8", "12", "16"], "VCC:Voicing": ["1", "2", "3", "4", "5", "6"], "VCF1:BpUbie": ["Off", "On"], "VCF1:FM2Src": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:FMSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:FbSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:FfmSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:LColor": ["clean", "rough"], "VCF1:LMode": ["24db", "12db"], "VCF1:Model": ["Ladder", "Cascade", "Multi", "Bite", "Uhbie"], "VCF1:ResSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:SMSrc": ["none", "ModWhl", "PitchW", "CtrlA", "CtrlB", "Gate", "Velocity", "Pressure", "KeyFlw", "KeyFlw2", "Alt", "Random", "StackVc", "VoiceMap", "Env1", "Env2", "LFO1", "LFO2", "Rectify", "Invert", "Quant", "Lag", "Adder", "Multiply"], "VCF1:SkRev": ["1", "2"], "VCF1:SvfMode": ["LP 24db", "LP 12db", "HP", "BP"], "main:#FX1": ["Off", "On"], "main:#FX2": ["Off", "On"], "VCC:MTunS": ["Off", "On"], "UI:Oct1": ["32'", "16'", "8'", "4'", "2'"], "UI:Oct2": ["32'", "16'", "8'", "4'", "2'"], "UI:Oct3": ["32'", "16'", "8'", "4'", "2'"], "UI:TMTo": ["Off", "1", "2", "3", "1+2", "1+3", "2+3", "1+2+3"], "UI:SMTo": ["Off", "1", "2", "3", "1+2", "1+3", "2+3", "1+2+3"], "UI:DTMTo": ["Off", "1", "2", "1+2"], "UI:DSMTo": ["Off", "1", "2", "1+2"], "UI:DPWMTo": ["Off", "1", "2", "1+2"], "UI:Waves1": ["Off", "Tri", "Saw", "Pulse", "Noise", "Tri+Saw", "Tri+Pls", "Saw+Pls", "Tri+Nse", "Saw+Nse", "Pls+Nse", "T+S+P", "T+S+N", "T+P+N", "S+P+N", "All"], "UI:Waves2": ["Off", "Tri", "Saw", "Pulse", "Sine", "Tri+Saw", "Tri+Pls", "Saw+Pls", "Tri+Sin", "Saw+Sin", "Pls+Sin", "T+S+P", "T+S+S", "T+P+S", "S+P+S", "All"], "UI:E1Opt": ["Off", "Quantize", "Curve", "Q+Curve"], "UI:E2Opt": ["Off", "Quantize", "Curve", "Q+Curve"], "UI:FX1": ["Off", "Chorus", "Phaser", "Plate", "Delay", "Rotary"], "UI:FX2": ["Off", "Chorus", "Phaser", "Plate", "Delay", "Rotary"]};
+</script>
+<script>
+// Diva AirSlick — Push banks and the device's own parameters ("UI:" keys). The same file drives the
+// Max for Live device and this web page.
+//
+// Banks: Main 1 and Main 2 (what you need to play a sound), then Diva's panels in order (oscillators →
+// HPF/filter → envelopes → LFOs → effects → amp, voice, tuning → modifiers → trimmers). Outside the
+// Main banks, each parameter appears once.
+// The number, order and names of the banks are fixed; their contents follow the selected models (empty
+// when a model doesn't need them). A bank that depends on a model comes after the bank holding its selector.
+//
+// UI: parameters (they don't exist in Diva, the device translates them):
+//  - an oscillator's Octave and Detune share Diva's Tune (12 × octave + detune);
+//    pushing Detune past ± 6 switches the octave, like Diva's 5-turn knob;
+//  - several Diva switches merged into one list (modulation targets, Dual VCO waveforms,
+//    Digital envelope options);
+//  - "FX n": Off or the selected module (Diva's On switch + module selector).
+// Each UI: parameter: sn/ln (short and long names), c (dial | menu), options or min/max, deps (Diva keys
+// read), read(get) → control value, write(v, get) → [[Diva key, value 0…1], …].
+// get(k) returns the normalised 0…1 value of a Diva parameter.
+(function () {
+	const root = typeof window !== 'undefined' ? window : globalThis;
+
+	function create(P) {
+		const n = (k) => P[k].options.length;
+		const gi = (get, k) => Math.min(n(k) - 1, Math.max(0, Math.floor(get(k) * n(k))));
+		const nv = (i, N) => (i + 0.5) / N;
+		const real = (get, k) => P[k].min + (P[k].max - P[k].min) * get(k);
+		const norm = (k, r) => Math.max(0, Math.min(1, (r - P[k].min) / (P[k].max - P[k].min)));
+		const on = (get, k) => gi(get, k) === 1;
+
+		// ------------------------------------------------------------ UI: parameters
+		const FEET = ["32'", "16'", "8'", "4'", "2'"];
+		const VIRT = {};
+		const st = (get, o) => real(get, 'OSC:Tune' + o);
+		const octOf = (get, o) => Math.max(-2, Math.min(2, Math.round(st(get, o) / 12)));
+		const tune = (o, s) => [['OSC:Tune' + o, norm('OSC:Tune' + o, Math.max(-30, Math.min(30, s)))]];
+		[1, 2, 3].forEach((o) => {
+			VIRT['UI:Oct' + o] = {
+				sn: `Osc ${o} Octave`, ln: `Osc Octave ${o}`, c: 'menu', options: FEET, deps: ['OSC:Tune' + o],
+				read: (get) => octOf(get, o) + 2,
+				write: (i, get) => tune(o, st(get, o) + 12 * (Math.round(i) - 2 - octOf(get, o))),
+			};
+		});
+		[2, 3].forEach((o) => {
+			// control range ± 7: the device sees anything past ± 6 and switches the octave
+			VIRT['UI:Det' + o] = {
+				sn: `Osc ${o} Detune`, ln: `Osc Detune ${o}`, c: 'dial', min: -7, max: 7, unit: 'st', deps: ['OSC:Tune' + o],
+				read: (get) => st(get, o) - 12 * octOf(get, o),
+				write: (v, get) => tune(o, 12 * octOf(get, o) + Number(v)),
+			};
+		});
+		const bits = (m) => m.toString(2).split('1').length - 1;
+		// 8 characters at most (beyond that, Push spills into the next column):
+		// one choice → its name; several → abbreviations joined by "+", or initials; all → All
+		function comboText(m, labels) {
+			const on = labels.filter((_, j) => m & (1 << j));
+			if (!on.length) return 'Off';
+			if (on.length === 1) return on[0][0];
+			if (on.length === labels.length && labels.length > 3) return 'All';
+			const t = on.map((l) => l[1]).join('+');
+			return t.length <= 8 ? t : on.map((l) => l[1][0]).join('+');
+		}
+		// labels: [full name, abbreviation]
+		function combo(key, sn, ln, keys, labels) {
+			const opts = [];
+			for (let c = 0; c <= keys.length; c++) // none, then one, two…
+				for (let m = 0; m < 1 << keys.length; m++) if (bits(m) === c) opts.push(m);
+			labels = labels.map((l) => (Array.isArray(l) ? l : [l, l]));
+			VIRT[key] = {
+				sn, ln, c: 'menu', deps: keys,
+				options: opts.map((m) => comboText(m, labels)),
+				read: (get) => Math.max(0, opts.indexOf(keys.reduce((m, k, j) => m | (on(get, k) ? 1 << j : 0), 0))),
+				write: (i) => keys.map((k, j) => [k, nv(opts[Math.round(i)] & (1 << j) ? 1 : 0, 2)]),
+			};
+		}
+		combo('UI:TMTo', 'Tune Mod To', 'Osc Tune Mod Targets', ['OSC:TM1On', 'OSC:TM2On', 'OSC:TM3On'], ['1', '2', '3']);
+		combo('UI:SMTo', 'Shape Mod To', 'Osc Shape Mod Targets', ['OSC:SM1On', 'OSC:SM2On', 'OSC:SM3On'], ['1', '2', '3']);
+		combo('UI:DTMTo', 'Dgt Tune Mod To', 'Osc Dgt Tune Mod Targets', ['OSC:TM1On', 'OSC:TM2On'], ['1', '2']);
+		combo('UI:DSMTo', 'Dgt Shape Mod To', 'Osc Dgt Shape Mod Targets', ['OSC:SM1On', 'OSC:SM2On'], ['1', '2']);
+		combo('UI:DPWMTo', 'Dgt PWM To', 'Osc Dgt PWM Targets', ['OSC:PWM1', 'OSC:PWM2'], ['1', '2']);
+		combo('UI:Waves1', 'Osc 1 Waves', 'Osc Waves 1', ['OSC:Tri1', 'OSC:Saw1', 'OSC:PWM1', 'OSC:Noise1'], [['Tri', 'Tri'], ['Saw', 'Saw'], ['Pulse', 'Pls'], ['Noise', 'Nse']]);
+		combo('UI:Waves2', 'Osc 2 Waves', 'Osc Waves 2', ['OSC:Tri2', 'OSC:Saw2', 'OSC:PW2', 'OSC:Sin2'], [['Tri', 'Tri'], ['Saw', 'Saw'], ['Pulse', 'Pls'], ['Sine', 'Sin']]);
+		combo('UI:E1Opt', 'Env1 Digital', 'Env1 Digital Options', ['ENV1:Quant', 'ENV1:Crve'], [['Quantize', 'Q'], ['Curve', 'Curve']]);
+		combo('UI:E2Opt', 'Env2 Digital', 'Env2 Digital Options', ['ENV2:Quant', 'ENV2:Crve'], [['Quantize', 'Q'], ['Curve', 'Curve']]);
+		[1, 2].forEach((f) => {
+			const onK = 'main:#FX' + f, modK = `FX${f}:Module`;
+			VIRT['UI:FX' + f] = {
+				sn: 'FX ' + f, ln: `FX${f} Module On`, c: 'menu', deps: [onK, modK],
+				options: ['Off', 'Chorus', 'Phaser', 'Plate', 'Delay', 'Rotary'],
+				read: (get) => (on(get, onK) ? gi(get, modK) + 1 : 0),
+				write: (i) => { i = Math.round(i); return i ? [[onK, nv(1, 2)], [modK, nv(i - 1, 5)]] : [[onK, nv(0, 2)]]; },
+			};
+		});
+
+		// ------------------------------------------------------------ banks
+		// slot: key, null, by(section, [one key per model]) or a function (model) → slot
+		const by = (sec, v) => ({ by: sec, v });
+		const OSC = (...v) => by('osc', v), VCF = (...v) => by('vcf', v), HPF = (...v) => by('hpf', v);
+		// oscillators, one row per model (Triple VCO, Dual VCO, DCO, Eco, Digital); columns line up:
+		// 1 model or sync · 2 waveform · 3 octave · 4 detune or shape · 5 level · 6-8 modulation
+		const OSC_BANKS = [
+			{
+				name: 'Osc 1/3',
+				m: [
+					// Triple mixer Feedback: only here when the HPF slot doesn't already hold it
+					['OSC:Model', 'OSC:Shape1', 'UI:Oct1', 'OSC:FM', 'OSC:Vol1', 'OSC:Noise', 'OSC:NoiseC', (model) => (model('hpf') === 0 ? null : 'VCF1:Fback')],
+					['OSC:Model', 'UI:Waves1', 'UI:Oct1', 'OSC:PW', 'OSC:OscMix', 'OSC:PWMSrc', 'OSC:PWMDpt', 'OSC:PWM2'],
+					['OSC:Model', 'OSC:PWShp', 'UI:Oct1', 'OSC:PW', 'OSC:SawShp', 'OSC:SubShp', 'OSC:Vol3', 'OSC:Noise'],
+					['OSC:Model', 'OSC:Wave1', 'UI:Oct1', 'OSC:PW', 'OSC:Vol1', 'OSC:TM1Src', 'OSC:TM1Dpt', null],
+					['OSC:Model', 'OSC:DgtlTp1', 'UI:Oct1', 'OSC:PW', 'OSC:DgtlSp2', 'OSC:OscMix', 'OSC:FM', 'OSC:RMPwm'],
+				],
+			},
+			{
+				name: 'Osc 2/3',
+				m: [
+					['OSC:Sync2', 'OSC:Shape2', 'UI:Oct2', 'UI:Det2', 'OSC:Vol2', 'OSC:TM1Src', 'OSC:TM1Dpt', 'UI:TMTo'],
+					['OSC:Sync2', 'UI:Waves2', 'UI:Oct2', 'UI:Det2', 'OSC:FM', 'OSC:FmSrc', 'OSC:FmDpt', 'OSC:triSp'],
+					['OSC:PWMSrc', 'OSC:PWMDpt', null, null, 'OSC:TM1Src', 'OSC:TM1Dpt', 'OSC:TM2Src', 'OSC:TM2Dpt'],
+					[null, 'OSC:Wave2', 'UI:Oct2', 'UI:Det2', 'OSC:Vol2', 'OSC:TM2Src', 'OSC:TM2Dpt', null],
+					['OSC:Sync2', 'OSC:DgtlTp2', 'OSC:Tune2', 'OSC:DgtlSp3', 'OSC:DgtlSp4', 'OSC:TM1Src', 'OSC:TM1Dpt', 'UI:DSMTo'],
+				],
+			},
+			{
+				name: 'Osc 3/3',
+				m: [
+					['OSC:Sync3', 'OSC:Shape3', 'UI:Oct3', 'UI:Det3', 'OSC:Vol3', 'OSC:Sh1Src', 'OSC:Sh1Dpt', 'UI:SMTo'],
+					['OSC:TMmode', 'OSC:TM1Src', 'OSC:TM1Dpt', 'OSC:TM2Src', 'OSC:TM2Dpt', null, null, null],
+					null,
+					null,
+					['OSC:TM2Src', 'OSC:TM2Dpt', 'UI:DTMTo', 'OSC:PWMSrc', 'OSC:PWMDpt', 'UI:DPWMTo', 'OSC:Sh1Src', 'OSC:Sh1Dpt'],
+				],
+			},
+		];
+		// effects: "FX n" then 7 module settings; the rest goes to "FX n More" (Phaser, Delay, Rotary)
+		const FXMOD = ['Chrs#', 'Phase#', 'Plate#', 'Delay#', 'Rtary#'];
+		const FX_MAIN = [
+			['Type', 'Rate', 'Depth', 'Wet', null, null, null],
+			['Type', 'Rate', 'Sync', 'Depth', 'Center', 'FB', 'Wet'],
+			['Pre', 'Size', 'Decay', 'Damp', 'Diff', 'Dry', 'Wet'],
+			['LDel', 'CDel', 'RDel', 'FeedB', 'Dry', 'CVol', 'SVol'],
+			['Mode', 'Cont', 'Slow', 'Fast', 'RTime', 'Drive', 'Mix'],
+		];
+		const FX_MORE = [null, ['Phase', 'Stereo'], null, ['HP', 'LP', 'Wow'], ['Bal', 'Stereo', 'Out']];
+		const fxKey = (f, m, p) => (p ? FXMOD[m].replace('#', f) + ':' + p : null);
+		const R8 = [0, 1, 2, 3, 4, 5, 6, 7];
+		const fxBank = (f) => ({ name: 'FX ' + f, hue: 'fx', slots: ['UI:FX' + f, ...R8.slice(0, 7).map((i) => by('fx' + f, FX_MAIN.map((row, m) => fxKey(f, m, row[i]))))] });
+		const fxMore = (f) => ({ name: `FX ${f} More`, hue: 'fx',
+			slots: R8.map((i) => by('fx' + f, FX_MORE.map((r, m) => (r ? fxKey(f, m, r[i]) : null)))) });
+		// extra filter settings: only present when the model has them (Cascade, Uhbie, HPF Bite)
+		const FILTER_MORE = [
+			HPF(null, null, null, 'HPF:Res'), HPF(null, null, null, 'HPF:FMSrc'), HPF(null, null, null, 'HPF:FMDpt'), HPF(null, null, null, 'HPF:Rev'),
+			VCF(null, 'VCF1:LColor', null, null, 'VCF1:BpUbie'), VCF(null, null, null, null, 'VCF1:SMSrc'), VCF(null, null, null, null, 'VCF1:SMDpt'), null,
+		];
+
+		// Main 1 / Main 2: what you need to play a sound (the only banks that repeat settings from
+		// other banks); their contents follow the oscillator, envelope and effect models
+		const E1 = (...v) => by('env1', v);
+		const FX_MIX = ['Wet', 'Wet', 'Wet', 'CVol', 'Mix'];
+		const fxMix = (f) => by('fx' + f, FX_MIX.map((p, m) => fxKey(f, m, p)));
+		const MAIN = [
+			{ name: 'Main 1', hue: 'perf',
+				slots: ['VCF1:Freq', 'VCF1:Res', 'VCF1:FMDpt', 'ENV2:Dec', 'ENV1:Atk', E1('ENV1:Dec', 'ENV1:Rel', 'ENV1:Rel'),
+					OSC('OSC:Shape1', 'OSC:PW', 'OSC:PW', 'OSC:Wave1', 'OSC:PW'), OSC('UI:Det2', 'UI:Det2', 'OSC:Vol3', 'UI:Det2', 'OSC:Tune2')] },
+			{ name: 'Main 2', hue: 'perf',
+				slots: [OSC('OSC:Vol2', 'OSC:OscMix', 'OSC:Noise', 'OSC:Vol2', 'OSC:OscMix'), 'VCF1:FM2Dpt', 'LFO1:Rate', 'LFO2:Rate',
+					'VCC:Porta', fxMix(1), fxMix(2), 'VCA1:Vol'] },
+		];
+
+		const BANKS = [
+			...MAIN,
+			...OSC_BANKS.map((b) => ({ name: b.name, hue: 'osc', slots: R8.map((j) => by('osc', b.m.map((row) => (row ? row[j] : null)))) })),
+			// HPF then VCF, left to right as in Diva
+			{ name: 'Filter', hue: 'vcf',
+				slots: ['HPF:Model', HPF('VCF1:Fback', 'HPF:PFreq', 'HPF:Freq', 'HPF:Freq'), 'VCF1:Model', 'VCF1:Freq', 'VCF1:Res', 'VCF1:KeyScl',
+					VCF('VCF1:LMode', 'VCF1:LMode', 'VCF1:SvfMode', 'VCF1:SkRev', 'VCF1:ShpMix'), 'VCF1:FFM'] },
+			{ name: 'Filter Mod', hue: 'vcf',
+				slots: ['VCF1:FMSrc', 'VCF1:FMDpt', 'VCF1:FM2Src', 'VCF1:FM2Dpt', 'VCF1:ResSrc', 'VCF1:ResDpt', 'VCF1:FfmSrc', 'VCF1:FfmDpt'] },
+			{ name: 'Filter More', hue: 'hpf', slots: FILTER_MORE },
+			...[1, 2].map((e) => ({ name: 'Env ' + e, hue: 'env',
+				slots: [`ENV${e}:Model`, `ENV${e}:Atk`, `ENV${e}:Dec`, `ENV${e}:Sus`, by('env' + e, [`ENV${e}:RelOn`, `ENV${e}:Rel`, `ENV${e}:Rel`]),
+					`ENV${e}:Vel`, `ENV${e}:KeyFlw`, by('env' + e, [null, null, `UI:E${e}Opt`])] })),
+			...[1, 2].map((l) => ({ name: 'LFO ' + l, hue: 'lfo',
+				slots: [`LFO${l}:Sync`, `LFO${l}:Rate`, `LFO${l}:Wave`, `LFO${l}:Trig`, `LFO${l}:Phse`, `LFO${l}:Dly`, `LFO${l}:Polar`, null] })),
+			{ name: 'LFO Mod', hue: 'lfo',
+				slots: ['LFO1:FMS1', 'LFO1:FMD1', 'LFO1:DMS1', 'LFO1:DMD1', 'LFO2:FMS1', 'LFO2:FMD1', 'LFO2:DMS1', 'LFO2:DMD1'] },
+			fxBank(1), fxMore(1), fxBank(2), fxMore(2),
+			{ name: 'Amp', hue: 'amp', slots: ['VCA1:Vol', 'VCA1:Pan', 'VCA1:VCA', 'VCA1:ModSrc', 'VCA1:ModDpt', 'VCA1:PanSrc', 'VCA1:PanDpt', 'main:CcOp'] },
+			{ name: 'Voice', hue: 'play', slots: ['VCC:Mode', 'VCC:Voices', 'VCC:Voicing', 'VCC:Prior', 'VCC:Porta', 'VCC:PortaM', 'VCC:Porta2', 'VCC:PRange'] },
+			{ name: 'Tuning', hue: 'play', slots: ['VCC:Trsp', 'VCC:FTun', 'VCC:PB', 'VCC:PBD', 'OSC:VtoD', 'VCC:MTunS', 'OPT:Acc', 'OPT:OffAcc'] },
+			{ name: 'Arp', hue: 'arp', slots: ['ARP:OnOff', 'ARP:Dir', 'ARP:Oct', 'ARP:Order', 'ARP:Rstrt', 'CLK:Base', 'CLK:Mult', 'CLK:Swing'] },
+			// the Dual VCO keeps its cross mod in its Osc 2 bank
+			{ name: 'Mods', hue: 'mods', slots: [OSC('OSC:FmSrc', null, 'OSC:FmSrc', 'OSC:FmSrc', 'OSC:FmSrc'), OSC('OSC:FmDpt', null, 'OSC:FmDpt', 'OSC:FmDpt', 'OSC:FmDpt'),
+				'OSC:NoisSrc', 'OSC:NoisDpt', 'VCF1:FbSrc', 'VCF1:FbDpt', 'MOD:A1Src', 'MOD:A2Src'] },
+			{ name: 'Processors', hue: 'mods', slots: ['MOD:RSrc', 'MOD:ISrc', 'MOD:QSrc', 'MOD:Quant', 'MOD:LSrc', 'MOD:Slew', 'MOD:M1Src', 'MOD:M2Src'] },
+			{ name: 'Trimmers', hue: 'trim', slots: ['OPT:TSlop', 'OSC:Drift', 'OPT:CSlop', 'OPT:ESlop', 'OPT:PSlop', 'OPT:GSlop', OSC(null, null, null, null, 'OSC:DNoAlia'), null] },
+			{ name: 'Voice Map', hue: 'trim', slots: ['OPT:V1Mod', 'OPT:V2Mod', 'OPT:V3Mod', 'OPT:V4Mod', 'OPT:V5Mod', 'OPT:V6Mod', 'OPT:V7Mod', 'OPT:V8Mod'] },
+		];
+
+		function res(s, model) {
+			if (s == null) return null;
+			if (typeof s === 'string') return s;
+			if (typeof s === 'function') return res(s(model), model);
+			return res(s.v[model(s.by)], model);
+		}
+		// banks for the current models: [{ name, hue, slots: [key | null] × 8 }]. Fixed number, order and
+		// names: only the contents follow the models (empty when a model doesn't need them). Push finds
+		// its bank by name: renaming it sends Push to the last bank.
+		function build(model) {
+			return BANKS.map((b) => ({ name: b.name, hue: b.hue, slots: b.slots.map((s) => res(s, model)) }));
+		}
+
+		// ------------------------------------------------------------ text for continuous waveforms
+		// marks from Diva's panel [value, name, abbreviation]; between two marks: "Saw>Sqr".
+		// 8 characters at most (Push spills over beyond that)
+		const WAVES = {
+			'OSC:Shape1': [[1, 'Ramp', 'Rmp'], [3, 'Triangle', 'Tri'], [5, 'Saw', 'Saw'], [7, 'Square', 'Sqr'], [8, 'Pls 25%', 'Pls'], [9, 'Narrow', 'Nrw']],
+			'OSC:Wave1': [[1, 'Triangle', 'Tri'], [2, 'Saw', 'Saw'], [3, 'PWM', 'PWM'], [4, 'Noise', 'Nse']],
+			'OSC:Wave2': [[1, 'Saw', 'Saw'], [2, 'Square', 'Sqr'], [3, 'Pulse', 'Pls'], [4, 'Ring', 'Rng']],
+		};
+		WAVES['OSC:Shape2'] = WAVES['OSC:Shape3'] = WAVES['OSC:Shape1'];
+		function waveText(k, v) {
+			const pts = WAVES[k];
+			for (let i = 0; i < pts.length - 1; i++) {
+				const [a, na, sa] = pts[i], [b, nb, sb] = pts[i + 1];
+				if (v > b) continue;
+				const t = (v - a) / (b - a);
+				if (t <= 0.15) return na;
+				if (t >= 0.85) return nb;
+				return `${sa}>${sb}`;
+			}
+			return pts[pts.length - 1][1];
+		}
+
+		return { VIRT, BANKS, build, res, WAVES, waveText, FEET };
+	}
+
+	root.DW_BANKS = { create };
+})();
+</script>
+<script>
+// Diva AirSlick — simulation of the Push banks (Device mode).
+// Behaviour follows the Push 2/3 manual:
+//  - 8 touch-sensitive encoders above the display; touching one highlights its parameter;
+//    Shift = fine adjustment.
+//  - lower button row = banks; with more than 8, the outer buttons become arrows that select the
+//    previous or next bank, and the row slides by one bank to keep it in view.
+//  - upper row: the left button goes back up to the device chain.
+// "UI:" parameters are the device's own (they don't exist in Diva): octave and detune sharing one
+// Tune setting, modulation targets merged into one list, and so on.
+(function () {
+	const D = window.DIVA, SN = window.DW_SN || {};
+	const P = Object.assign({}, D.params);
+	const V = Object.assign({}, D.values);
+
+	// ---------------------------------------------------------------- real values
+	const nreal = (k) => (P[k].options ? P[k].options.length : 0);
+	const ridx = (k) => Math.min(nreal(k) - 1, Math.max(0, Math.floor((V[k] ?? 0) * nreal(k))));
+	const rset = (k, i) => { V[k] = (i + 0.5) / nreal(k); };
+
+	// ---------------------------------------------------------------- banks and UI: parameters
+	// banks.js is the file the device uses, so the page shows exactly what Push gets
+	const B = window.DW_BANKS.create(D.params), VIRT = B.VIRT;
+	const get = (k) => V[k] ?? 0;
+	const apply = (k, v) => VIRT[k].write(v, get).forEach(([dk, x]) => { V[dk] = x; });
+	Object.keys(VIRT).forEach((k) => { P[k] = VIRT[k].c === 'menu' ? { kind: 'enum', options: VIRT[k].options } : { kind: 'continuous', min: VIRT[k].min, max: VIRT[k].max }; });
+
+	// same access for real and UI: parameters
+	const nopt = (k) => (P[k].options ? P[k].options.length : 0);
+	const idx = (k) => (VIRT[k] ? VIRT[k].read(get) : ridx(k));
+	const setIdx = (k, i) => (VIRT[k] ? apply(k, i) : rset(k, i));
+	// Detune: the ring shows ± 6 semitones around the octave
+	const norm = (k) => (VIRT[k] ? (VIRT[k].read(get) + 6) / 12 : V[k] ?? 0);
+
+	// ---------------------------------------------------------------- models
+	const SEL = { osc: 'OSC:Model', hpf: 'HPF:Model', vcf: 'VCF1:Model', env1: 'ENV1:Model', env2: 'ENV2:Model', fx1: 'FX1:Module', fx2: 'FX2:Module' };
+	const SEL_NAMES = {
+		osc: ['Triple VCO', 'Dual VCO', 'DCO', 'Eco', 'Digital'],
+		hpf: ['Feedback', 'HPF Post', 'HPF Pre', 'HPF Bite'],
+		vcf: ['Ladder', 'Cascade', 'Multimode', 'Bite', 'Uhbie'],
+		env1: ['ADS', 'Analogue', 'Digital'],
+		env2: ['ADS', 'Analogue', 'Digital'],
+		fx1: ['Chorus', 'Phaser', 'Plate', 'Delay', 'Rotary'],
+		fx2: ['Chorus', 'Phaser', 'Plate', 'Delay', 'Rotary'],
+	};
+	const SEL_LABEL = { osc: 'Oscillators', hpf: 'HPF', vcf: 'Filter', env1: 'Env 1', env2: 'Env 2', fx1: 'FX 1', fx2: 'FX 2' };
+	const model = (sec) => ridx(SEL[sec]);
+	const build = () => B.build(model).map((b) => Object.assign(b, { buttons: [] }));
+
+	// ---------------------------------------------------------------- names and values shown
+	// list texts: the device's (0/1 switches → Off/On)
+	const TOGGLE = (k) => P[k].options && P[k].options.length === 2 && P[k].options[0] === '0' && P[k].options[1] === '1';
+	const OPTS = { 'OSC:PWM2': ['Osc 1', 'Osc 1+2'] };
+	const opts = (k) => (window.DW_ENUM || {})[k] || OPTS[k] || (TOGGLE(k) ? ['Off', 'On'] : P[k].options);
+	const name = (k) => SN[k] || P[k].name;
+	// the device's "%+.2f st" format
+	const signed = (x, d) => (x < 0 ? '-' : '+') + Math.abs(x).toFixed(d);
+	function fmt(k) {
+		const p = P[k];
+		if (p.options) return opts(k)[idx(k)];
+		if (VIRT[k]) return signed(VIRT[k].read(get), 2) + ' st';
+		const v = p.min + (p.max - p.min) * (V[k] ?? 0);
+		if (B.WAVES[k]) return B.waveText(k, v);
+		// Push drops a trailing zero: 80.00 → 80.0, 67.34 stays
+		return v.toFixed(p.dec ?? 2).replace(/(\.\d)0$/, '$1');
+	}
+
+	// ---------------------------------------------------------------- simulation state
+	const S = {
+		banks: build(),
+		bank: 0, // index of the selected bank button
+		first: 0, // first bank shown in the lower row
+		touched: -1,
+		shift: false,
+		buttons: false, // everything sits on the encoders: no bank buttons (@buttons)
+		top: false, // device chain level (upper left button)
+		flash: new Map(), // "bank:slot" → time of the change
+		acc: {},
+	};
+
+	// lower row: a window over the banks, with ← in the first button when banks are hidden on the
+	// left and → in the last when banks are hidden on the right; it slides just enough to show the
+	// selected bank (on Push 3: ← Osc 2/3 … Env 1 →)
+	function lower() {
+		const n = S.banks.length;
+		const lay = (first) => {
+			const left = first > 0;
+			let room = 8 - (left ? 1 : 0);
+			const right = first + room < n;
+			if (right) room -= 1;
+			return { left, right, items: Array.from({ length: Math.min(room, n - first) }, (_, j) => first + j) };
+		};
+		if (S.bank < S.first) S.first = S.bank;
+		let L = lay(S.first);
+		while (S.bank > L.items[L.items.length - 1]) L = lay(++S.first);
+		return L;
+	}
+	// an arrow selects the previous or next bank
+	const step = (dir) => { S.bank = Math.max(0, Math.min(S.banks.length - 1, S.bank + dir)); };
+
+	// ---------------------------------------------------------------- gestures
+	function changed(k) {
+		const keys = VIRT[k] ? VIRT[k].deps : [k];
+		const sec = Object.keys(SEL).find((s) => keys.includes(SEL[s]));
+		if (sec) rebuild(sec);
+	}
+	function turn(slot, delta) {
+		const k = S.banks[S.bank].slots[slot];
+		if (!k) return;
+		const p = P[k];
+		if (p.options) {
+			// stepped encoder: one step every ~ 14 px (slower with Shift)
+			S.acc[slot] = (S.acc[slot] || 0) + delta;
+			const step = S.shift ? 40 : 14;
+			while (Math.abs(S.acc[slot]) >= step) {
+				const dir = Math.sign(S.acc[slot]);
+				S.acc[slot] -= dir * step;
+				const i = Math.max(0, Math.min(nopt(k) - 1, idx(k) + dir));
+				if (i !== idx(k)) { setIdx(k, i); changed(k); }
+			}
+		} else if (VIRT[k]) {
+			// Detune: 12 semitones per encoder sweep; past ± 6, the octave switches
+			apply(k, VIRT[k].read(get) + (delta * 12) / (S.shift ? 3000 : 300));
+		} else {
+			V[k] = Math.max(0, Math.min(1, (V[k] ?? 0) + delta / (S.shift ? 3000 : 300)));
+		}
+	}
+	function press(k) {
+		setIdx(k, (idx(k) + 1) % nopt(k));
+		changed(k);
+	}
+
+	// a model changed: the banks are rebuilt in place and Push keeps the selected bank button
+	const log = [];
+	function rebuild(sec) {
+		const before = S.banks, after = build(), now = performance.now();
+		let count = 0;
+		after.forEach((b, i) => {
+			const old = before[i] || { slots: [], name: null };
+			b.slots.forEach((k, j) => { if (old.slots[j] !== k) { S.flash.set(i + ':' + j, now); count++; } });
+			if (old.name !== b.name) S.flash.set(i + ':name', now);
+		});
+		S.banks = after;
+		S.bank = Math.min(S.bank, after.length - 1);
+		log.unshift({ sec, model: SEL_NAMES[sec][model(sec)], count, bank: after[S.bank].name });
+		if (log.length > 6) log.pop();
+	}
+
+	window.DW_PUSH = { S, P, V, SEL, SEL_NAMES, SEL_LABEL, VIRT, model, idx, setIdx, norm, changed, turn, press, lower, step, fmt, opts, nopt, name, log };
+})();
+</script>
+<script>
+(function () {
+	const X = window.DW_PUSH, S = X.S, P = X.P;
+	const W = 1000, H = 336, DX = 20, DY = 126, DW = 960, DH = 160, COL = 120;
+	const HUE = (h) => getComputedStyle(document.documentElement).getPropertyValue('--h-' + h).trim();
+	const TRACK = getComputedStyle(document.documentElement).getPropertyValue('--track').trim();
+	const FONT = '"IBM Plex Sans", "Helvetica Neue", sans-serif';
+	// Push 3 display, from a photo of the device on Env 1: names small and bold, values large and
+	// light, everything left-aligned in its column and cut without an ellipsis (ADS / analogu / digital)
+	const PAD = 9, ACCENT = '#a9d3ff', SELECT = '#3f8fe8';
+	const cv = document.getElementById('push'), ctx = cv.getContext('2d');
+	let cssW = 1000;
+
+	// ------------------------------------------------------------ drawing
+	function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+	function clip(str, max) {
+		while (str.length > 1 && ctx.measureText(str).width > max) str = str.slice(0, -1);
+		return str;
+	}
+	function text(str, x, y, { size = 12, weight = 400, color = '#fff', max = COL - 2 * PAD, align = 'left' } = {}) {
+		ctx.font = `${weight} ${size}px ${FONT}`;
+		ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+		ctx.fillText(clip(String(str), max), x, y);
+	}
+	const flashAge = (key) => { const t = S.flash.get(key); return t == null ? Infinity : performance.now() - t; };
+	const FLASH = 1500;
+
+	function lowerLabels() {
+		const L = X.lower();
+		const out = new Array(8).fill(null);
+		let j = 0;
+		if (L.left) out[j++] = { arrow: -1 };
+		L.items.forEach((b) => { out[j++] = { bank: b }; });
+		if (L.right) out[7] = { arrow: 1 };
+		return out;
+	}
+	function upperLabels() {
+		const out = new Array(8).fill(null);
+		out[0] = { back: true };
+		if (S.buttons && !S.top) S.banks[S.bank].buttons.forEach((k, j) => { out[j + 1] = { key: k }; });
+		return out;
+	}
+
+	function draw() {
+		const dpr = window.devicePixelRatio || 1;
+		ctx.setTransform((cssW * dpr) / W, 0, 0, (cssW * dpr) / W, 0, 0);
+		ctx.clearRect(0, 0, W, H);
+		// front panel
+		ctx.fillStyle = '#19191b'; rr(0, 0, W, H, 10); ctx.fill();
+		const bank = S.banks[S.bank], up = upperLabels(), low = lowerLabels();
+
+		for (let i = 0; i < 8; i++) {
+			const cx = DX + i * COL + COL / 2;
+			// encoder (endless: no position mark)
+			const touched = S.touched === i;
+			ctx.fillStyle = '#0d0d0e'; ctx.beginPath(); ctx.arc(cx, 50, 31, 0, Math.PI * 2); ctx.fill();
+			const g = ctx.createRadialGradient(cx - 8, 40, 4, cx, 50, 27);
+			g.addColorStop(0, '#4a4b50'); g.addColorStop(1, '#2a2b2f');
+			ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, 50, 26, 0, Math.PI * 2); ctx.fill();
+			ctx.strokeStyle = touched ? TRACK : '#3a3b40'; ctx.lineWidth = touched ? 2.5 : 1;
+			ctx.beginPath(); ctx.arc(cx, 50, 28.5, 0, Math.PI * 2); ctx.stroke();
+			for (let t = 0; t < 24; t++) {
+				const a = (t / 24) * Math.PI * 2;
+				ctx.strokeStyle = '#222327'; ctx.lineWidth = 1;
+				ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 22, 50 + Math.sin(a) * 22); ctx.lineTo(cx + Math.cos(a) * 26, 50 + Math.sin(a) * 26); ctx.stroke();
+			}
+			// hardware buttons (LEDs)
+			const u = up[i], l = low[i];
+			let uc = '#232427';
+			if (u) uc = u.back ? '#7a7b80' : (X.idx(u.key) ? TRACK : '#55565b');
+			ctx.fillStyle = uc; rr(cx - 46, 98, 92, 16, 3); ctx.fill();
+			let lc = '#232427';
+			if (l) lc = l.arrow ? '#9a9ba0' : (l.bank === S.bank ? '#f2f2f2' : '#55565b');
+			if (S.top) lc = '#232427';
+			ctx.fillStyle = lc; rr(cx - 46, 298, 92, 16, 3); ctx.fill();
+		}
+
+		// display
+		ctx.fillStyle = '#000'; rr(DX - 4, DY - 4, DW + 8, DH + 8, 4); ctx.fill();
+		ctx.save(); ctx.beginPath(); ctx.rect(DX, DY, DW, DH); ctx.clip();
+		for (let i = 0; i < 8; i++) {
+			const x = DX + i * COL, tx = x + PAD, u = up[i];
+			// upper row
+			if (u && u.back) {
+				if (S.top) { ctx.fillStyle = SELECT; rr(x + 4, DY + 5, COL - 8, 17, 2); ctx.fill(); text('Diva AirSlick', tx, DY + 18, { size: 11.5, weight: 600, color: '#0b1a2b' }); }
+				else text('‹ Diva AirSlick', tx, DY + 18, { size: 11.5, weight: 500, color: '#d4d8de' });
+			} else if (u) {
+				const on = !!X.idx(u.key);
+				if (on) { ctx.fillStyle = SELECT; rr(x + 4, DY + 5, COL - 8, 17, 2); ctx.fill(); }
+				text(X.name(u.key), tx, DY + 18, { size: 11.5, weight: 500, color: on ? '#0b1a2b' : '#9b9b9b' });
+			}
+			if (S.top) continue;
+			// parameter
+			const k = bank.slots[i];
+			const age = flashAge(S.bank + ':' + i);
+			if (age < FLASH) { ctx.globalAlpha = 0.55 * (1 - age / FLASH); ctx.fillStyle = TRACK; ctx.fillRect(x + 2, DY + 25, COL - 4, 110); ctx.globalAlpha = 1; }
+			if (S.touched === i && k) { ctx.fillStyle = '#ffffff12'; ctx.fillRect(x + 2, DY + 25, COL - 4, 110); }
+			if (!k) continue;
+			const p = P[k];
+			text(X.name(k), tx, DY + 38, { size: 12, weight: 600, color: '#e9eef4' });
+			if (p.options && X.opts(k).length === 2) {
+				// two states: only the current one
+				text(X.fmt(k), tx, DY + 72, { size: 26, weight: 500, color: ACCENT });
+			} else if (p.options) {
+				// lists: three rows, the current one lit
+				const o = X.opts(k), cur = X.idx(k);
+				const first = Math.max(0, Math.min(o.length - 3, cur - 1));
+				for (let r = 0; r < Math.min(3, o.length); r++) {
+					const j = first + r;
+					text(o[j], tx, DY + 72 + r * 28, { size: 26, weight: j === cur ? 500 : 300, color: j === cur ? ACCENT : '#8a8a8a' });
+				}
+			} else {
+				text(X.fmt(k), tx, DY + 72, { size: 26, weight: 300, color: '#dadada' });
+				const v = X.norm(k), a0 = Math.PI * 0.7, a1 = Math.PI * 2.3, R = 18, cx = tx + R, cy = DY + 104;
+				ctx.lineCap = 'butt'; ctx.lineWidth = 3;
+				ctx.strokeStyle = '#3c3c3c'; ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
+				const bip = p.min < 0, av = a0 + (a1 - a0) * v, mid = Math.PI * 1.5;
+				ctx.strokeStyle = '#d2d2d2'; // Push has a single ring colour
+				ctx.beginPath();
+				if (bip) ctx.arc(cx, cy, R, Math.min(mid, av), Math.max(mid, av)); else ctx.arc(cx, cy, R, a0, Math.max(a0 + 0.001, av));
+				ctx.stroke();
+			}
+		}
+		// lower row: banks, with ← and → when more are hidden
+		for (let i = 0; i < 8; i++) {
+			if (S.top) break;
+			const x = DX + i * COL, tx = x + PAD, l = low[i];
+			if (!l) continue;
+			if (l.arrow) { text(l.arrow < 0 ? '←' : '→', tx, DY + 154, { size: 13, weight: 500, color: '#e0e0e0' }); continue; }
+			const b = S.banks[l.bank], sel = l.bank === S.bank, age = flashAge(l.bank + ':name');
+			if (sel) { ctx.fillStyle = SELECT; rr(x + 4, DY + 141, COL - 8, 18, 2); ctx.fill(); }
+			else if (age < FLASH) { ctx.globalAlpha = 0.7 * (1 - age / FLASH); ctx.fillStyle = TRACK; rr(x + 4, DY + 141, COL - 8, 18, 2); ctx.fill(); ctx.globalAlpha = 1; }
+			text(b.name, tx, DY + 154, { size: 12, weight: 500, color: sel ? '#0b1a2b' : '#d0d0d0' });
+		}
+		if (S.top) text('Press  “Diva AirSlick”  again to edit its parameters', DX + DW / 2, DY + 90, { size: 14, color: '#8d8d8d', max: 600, align: 'center' });
+		ctx.restore();
+
+		const anyFlash = [...S.flash.values()].some((t) => performance.now() - t < FLASH);
+		if (anyFlash) requestAnimationFrame(draw);
+	}
+
+	// ------------------------------------------------------------ gestures
+	function at(e) {
+		const r = cv.getBoundingClientRect();
+		return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+	}
+	function zone({ x, y }) {
+		const i = Math.floor((x - DX) / COL);
+		if (i < 0 || i > 7) return null;
+		if (y < 92) return { t: 'enc', i };
+		if (y < 122) return { t: 'up', i };
+		if (y < DY + DH) return { t: 'enc', i }; // dragging on the display works too
+		return { t: 'low', i };
+	}
+	let drag = null;
+	cv.addEventListener('pointerdown', (e) => {
+		const p = at(e), z = zone(p);
+		if (!z) return;
+		if (z.t === 'enc') { drag = { i: z.i, y: p.y }; S.touched = z.i; cv.setPointerCapture(e.pointerId); refresh(); return; }
+		if (z.t === 'up') {
+			const u = upperLabels()[z.i];
+			if (!u) return;
+			if (u.back) S.top = !S.top; else X.press(u.key);
+			refresh(); return;
+		}
+		if (z.t === 'low' && !S.top) {
+			const l = lowerLabels()[z.i];
+			if (!l) return;
+			if (l.arrow) X.step(l.arrow);
+			else S.bank = l.bank;
+			refresh();
+		}
+	});
+	cv.addEventListener('pointermove', (e) => {
+		if (!drag) return;
+		const p = at(e);
+		X.turn(drag.i, drag.y - p.y);
+		drag.y = p.y;
+		refresh();
+	});
+	const release = () => { if (drag) { drag = null; S.touched = -1; refresh(); } };
+	cv.addEventListener('pointerup', release);
+	cv.addEventListener('pointercancel', release);
+	let wheelT = null;
+	cv.addEventListener('wheel', (e) => {
+		const z = zone(at(e));
+		if (!z || z.t !== 'enc' || S.top) return;
+		e.preventDefault();
+		S.touched = z.i;
+		X.turn(z.i, -e.deltaY * 0.35);
+		clearTimeout(wheelT); wheelT = setTimeout(() => { S.touched = -1; refresh(); }, 500);
+		refresh();
+	}, { passive: false });
+
+	const shiftBtn = document.getElementById('shift');
+	const setShift = (v) => { S.shift = v; shiftBtn.setAttribute('aria-pressed', String(v)); };
+	shiftBtn.addEventListener('pointerdown', () => setShift(true));
+	shiftBtn.addEventListener('pointerup', () => setShift(false));
+	shiftBtn.addEventListener('pointerleave', () => setShift(false));
+	addEventListener('keydown', (e) => { if (e.key === 'Shift') setShift(true); });
+	addEventListener('keyup', (e) => { if (e.key === 'Shift') setShift(false); });
+	addEventListener('blur', () => setShift(false));
+
+	// ------------------------------------------------------------ bank map
+	const mapEl = document.getElementById('map');
+	const MOD_RE = /Src$|Dpt$|DMS1|DMD1|FMS1|FMD1/;
+	function renderMap() {
+		const now = performance.now();
+		let h = '<thead><tr><th></th><th>Bank</th>' + [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<th>${n}</th>`).join('') + '</tr></thead><tbody>';
+		S.banks.forEach((b, i) => {
+			const f = (key) => (now - (S.flash.get(key) ?? -1e9) < 1600 ? ' flash' : '');
+			h += `<tr tabindex="0" data-b="${i}" class="${i === S.bank ? 'cur' : ''}"><td class="n">${i + 1}</td>`;
+			h += `<td class="bank${f(i + ':name')}"><span class="dot" style="background:${HUE(b.hue)}"></span>${b.name}</td>`;
+			b.slots.forEach((k, j) => {
+				h += k ? `<td class="${MOD_RE.test(k) ? 'mod' : ''}${f(i + ':' + j)}">${X.name(k)}</td>` : `<td class="empty${f(i + ':' + j)}">—</td>`;
+			});
+			h += '</tr>';
+		});
+		mapEl.innerHTML = h + '</tbody>';
+	}
+	mapEl.addEventListener('click', (e) => {
+		const tr = e.target.closest('tr[data-b]');
+		if (!tr) return;
+		S.bank = Number(tr.dataset.b); S.top = false; refresh();
+	});
+	mapEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.click(); });
+
+	// ------------------------------------------------------------ status line
+	const logEl = document.getElementById('log');
+	function renderLog() {
+		const l = X.log[0];
+		logEl.innerHTML = l
+			? `<b>${X.SEL_LABEL[l.sec]} → ${l.model}</b> · ${l.count} slot${l.count === 1 ? '' : 's'} changed · Push stays on “${l.bank}”.`
+			: 'Starting from <b>Diva\'s default patch</b>.';
+	}
+
+	let lastLog = null, lastBank = -1;
+	function refresh() {
+		draw();
+		const logChanged = X.log[0] !== lastLog;
+		if (logChanged || S.bank !== lastBank) { lastBank = S.bank; renderMap(); }
+		if (logChanged) { lastLog = X.log[0]; renderLog(); }
+	}
+
+	function size() {
+		cssW = cv.getBoundingClientRect().width || 1000;
+		const dpr = window.devicePixelRatio || 1;
+		cv.width = Math.round(cssW * dpr);
+		cv.height = Math.round(cssW * dpr * H / W);
+		draw();
+	}
+	new ResizeObserver(size).observe(cv);
+	renderLog(); renderMap(); size();
+	document.fonts && document.fonts.ready.then(size);
+})();
+</script>
+</html>
